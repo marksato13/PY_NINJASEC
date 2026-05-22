@@ -1,0 +1,134 @@
+# ════════════════════════════════════════════════════════════════════
+# NinjaSec — Stack de PRODUCCIÓN
+# ════════════════════════════════════════════════════════════════════
+# Uso (en el servidor VLAN20 DMZ):
+#   cp .env.example .env  # editar valores reales
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+#
+# Notas:
+# - Postgres debería correr en otro server (VLAN30) para ISO 27001.
+#   Si lo dejás aquí, cambiá POSTGRES_HOST=postgres en .env.
+# - Caddy maneja HTTPS automático con Let's Encrypt (necesita DOMAIN).
+# - Solo 80/443 expuestos al host. Backend y frontend solo en red interna.
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  # ─── Reverse proxy con HTTPS automático ────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: ninjasec-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN:     ${DOMAIN:?DOMAIN requerido}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL requerido}
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - ninjasec-net
+
+  # ─── PostgreSQL (opcional aquí; ideal en VLAN30 DC) ────────────────
+  # Comentar este bloque si Postgres corre en otro server.
+  postgres:
+    image: postgres:16-alpine
+    container_name: ninjasec-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Backups locales (montar volumen del host para retención)
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ninjasec-net
+    # Solo bind a localhost del host por seguridad (no DMZ-public)
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # ─── Backend FastAPI ───────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ninjasec-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_NAME:                    ${APP_NAME:-NinjaSec}
+      APP_VERSION:                 ${APP_VERSION:-0.2.0}
+      API_PREFIX:                  ${API_PREFIX:-/api/v1}
+      DATABASE_URL:                postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
+      JWT_SECRET_KEY:              ${JWT_SECRET_KEY:?required}
+      JWT_ALGORITHM:               ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      CORS_ORIGINS:                ${CORS_ORIGINS}
+      SEED_ON_STARTUP:             "false"
+      IS_PRODUCTION:               "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8024/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ninjasec-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ─── Frontend Next.js ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+    container_name: ninjasec-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV:             production
+      BACKEND_INTERNAL_URL: http://backend:8024
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3018/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ninjasec-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  ninjasec-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

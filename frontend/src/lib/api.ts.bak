@@ -1,0 +1,1759 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8024/api/v1";
+
+export type AuthUser = {
+  id: number;
+  name?: string;
+  full_name?: string;
+  role: string;
+  email: string;
+  job_title?: string | null;
+  is_active?: boolean;
+  organization_id?: number | null;
+  redirect_to?: string;
+};
+
+export type LoginResponse = {
+  access_token: string;
+  token_type: string;
+  redirect_to: string;
+  user: {
+    id: number;
+    name: string;
+    role: string;
+    email: string;
+    job_title?: string;
+  };
+};
+
+export type DashboardUser = {
+  id: number;
+  full_name: string;
+  email: string;
+  role_code: string;
+  job_title?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_login_at?: string | null;
+};
+
+export type DashboardClient = {
+  id: number;
+  organization_id?: number;
+  company_name: string;
+  commercial_status: string;
+  sector?: string | null;
+  size?: string | null;
+  notes?: string | null;
+};
+
+export type ClientSiteItem = {
+  id: number;
+  client_id: number;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  status: string;
+};
+
+export type ClientContactItem = {
+  id: number;
+  client_id: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  is_primary: boolean;
+};
+
+export type ClientServiceItem = {
+  id: number;
+  client_id: number;
+  service_id: number;
+  starts_at?: string | null;
+  ends_at?: string | null;
+};
+
+export type ClientAccessItem = {
+  client_id: number;
+  user_id: number;
+  full_name: string;
+  email: string;
+  position_title?: string | null;
+  access_level?: string | null;
+  phone?: string | null;
+};
+
+export type CollaboratorProfile = {
+  id: number;
+  user_id: number;
+  position_title?: string | null;
+  bio?: string | null;
+  skills_json?: string | null;
+  seniority?: string | null;
+  availability_status?: string | null;
+};
+
+export type ProjectItem = {
+  id: number;
+  name: string;
+  status: string;
+  description?: string | null;
+  organization_id?: number | null;
+  client_id?: number | null;
+  project_type_id?: number | null;
+  area_id?: number | null;
+  service_id?: number | null;
+  product_id?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AreaItem = {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+};
+
+export type ProjectTypeItem = {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+};
+
+export type ProductItem = {
+  id: number;
+  name: string;
+  slug: string;
+  summary?: string | null;
+  is_active: boolean;
+  area_id?: number | null;
+  project_type_id?: number | null;
+};
+
+export type ProjectMemberItem = {
+  id: number;
+  project_id: number;
+  user_id: number;
+  role_in_project?: string | null;
+  allocation_percentage?: number | null;
+  can_publish_docs: boolean;
+  assignment_type: string;
+  is_required: boolean;
+  joined_at?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  user_role_code?: string | null;
+};
+
+export type ProjectRequirementItem = {
+  id: number;
+  project_id: number;
+  skill_id: number;
+  level?: string | null;
+  is_required: boolean;
+  created_at?: string | null;
+  skill_name?: string | null;
+};
+
+export type ProjectRecommendationItem = {
+  id: number;
+  project_id: number;
+  user_id: number;
+  score: number;
+  status?: string | null;
+  reason_json?: string | null;
+  created_at?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+};
+
+export type ServiceItem = {
+  id: number;
+  title: string;
+  slug: string;
+  category?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  is_public?: boolean;
+  active: boolean;
+};
+
+export type LeadItem = {
+  id: number;
+  contact_name: string;
+  email: string;
+  status: string;
+  company_name?: string | null;
+  interest_area?: string | null;
+  source?: string | null;
+  phone?: string | null;
+  message?: string | null;
+  created_at?: string | null;
+};
+
+export type JobApplicationItem = {
+  id: number;
+  full_name: string;
+  email: string;
+  status: string;
+  desired_role?: string | null;
+  phone?: string | null;
+  skills_summary?: string | null;
+  cv_url?: string | null;
+  portfolio_url?: string | null;
+  source?: string | null;
+  created_at?: string | null;
+};
+
+export type ApplicationAssignmentItem = {
+  id: number;
+  application_id: number;
+  reviewer_user_id: number;
+  assigned_by_user_id: number;
+  role?: string | null;
+  assigned_at?: string | null;
+};
+
+export type ApplicationReviewItem = {
+  id: number;
+  application_id: number;
+  reviewer_user_id: number;
+  score: number;
+  recommendation: string;
+  notes?: string | null;
+  created_at?: string | null;
+};
+
+export type ApplicationNoteItem = {
+  id: number;
+  application_id: number;
+  author_user_id: number;
+  note: string;
+  visibility: string;
+  created_at?: string | null;
+};
+
+export type ApplicationAttachmentItem = {
+  id: number;
+  application_id: number;
+  file_url: string;
+  file_type?: string | null;
+  uploaded_by_user_id: number;
+  created_at?: string | null;
+};
+
+export type ApplicationEventItem = {
+  id: number;
+  application_id: number;
+  event_type: string;
+  payload_json?: string | null;
+  created_at?: string | null;
+};
+
+export type JobApplicationFilters = {
+  status?: string;
+  desired_role?: string;
+  reviewer_id?: number;
+  date_from?: string;
+  date_to?: string;
+};
+
+export type ServiceRequestItem = {
+  id: number;
+  service_id: number;
+  requester_name: string;
+  requester_email: string;
+  status: string;
+  request_type?: string | null;
+  message?: string | null;
+  created_at?: string | null;
+};
+
+export type IntegrationItem = {
+  id: number;
+  client_id?: number | null;
+  name: string;
+  connector_type: string;
+  status: string;
+  base_url: string;
+  config_json?: string | null;
+  environment?: string | null;
+  license_type?: string | null;
+  license_expires_at?: string | null;
+  responsible_user_id?: number | null;
+  is_license_expired?: boolean;
+  effective_status?: string;
+};
+
+export type ReportItem = {
+  id: number;
+  title: string;
+  report_type: string;
+  template_name?: string | null;
+  definition_json?: string | null;
+};
+
+export type ReportRunItem = {
+  id: number;
+  report_id: number;
+  status: string;
+  output_file?: string | null;
+  summary_json?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type SkillItem = {
+  id: number;
+  name: string;
+  category?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+};
+
+export type UserSkillItem = {
+  id: number;
+  user_id: number;
+  skill_id: number;
+  skill_name?: string | null;
+  level?: string | null;
+  status: string;
+  verified_by?: number | null;
+  verified_at?: string | null;
+  created_at?: string | null;
+};
+
+export type UserCertificationItem = {
+  id: number;
+  user_id: number;
+  name: string;
+  issuer?: string | null;
+  credential_id?: string | null;
+  url?: string | null;
+  status: string;
+  verified_by?: number | null;
+  verified_at?: string | null;
+  issued_at?: string | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+};
+
+export type DocTypeItem = {
+  id: number;
+  name: string;
+  scope: string;
+  is_active: boolean;
+  created_at?: string | null;
+};
+
+export type ProjectDocItem = {
+  id: number;
+  project_id: number;
+  doc_type_id: number;
+  title: string;
+  summary?: string | null;
+  github_url?: string | null;
+  preview_md?: string | null;
+  visibility: string;
+  status: string;
+  enabled: boolean;
+  created_by?: number | null;
+  updated_by?: number | null;
+  verified_by?: number | null;
+  verified_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type DeviceItem = {
+  id: number;
+  integration_id: number;
+  hostname: string;
+  vendor?: string | null;
+  model?: string | null;
+  ip_address?: string | null;
+  device_type?: string | null;
+  status: string;
+  site_id?: number | null;
+  asset_tag?: string | null;
+  serial_number?: string | null;
+  device_owner?: string | null;
+};
+
+export type SecurityReviewItem = {
+  id: number;
+  organization_id: number;
+  client_id: number;
+  integration_id: number;
+  scheduled_at?: string | null;
+  executed_at?: string | null;
+  status: string;
+  reviewer_user_id?: number | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ReviewChecklistItem = {
+  id: number;
+  review_id: number;
+  criteria: string;
+  result?: string | null;
+  notes?: string | null;
+};
+
+export type ReviewFindingItem = {
+  id: number;
+  review_id: number;
+  severity: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  evidence_url?: string | null;
+  created_at: string;
+};
+
+export type ReviewRecommendationItem = {
+  id: number;
+  review_id: number;
+  finding_id?: number | null;
+  recommendation: string;
+  owner_user_id?: number | null;
+  due_date?: string | null;
+  status: string;
+};
+
+export type ReviewAttachmentItem = {
+  id: number;
+  review_id: number;
+  finding_id?: number | null;
+  file_url: string;
+  filename: string;
+  uploaded_at: string;
+};
+
+export type SecurityReviewDetail = SecurityReviewItem & {
+  checklist_items: ReviewChecklistItem[];
+  findings: ReviewFindingItem[];
+  recommendations: ReviewRecommendationItem[];
+  attachments: ReviewAttachmentItem[];
+};
+
+export type SupportTicketItem = {
+  id: number;
+  organization_id: number;
+  client_id: number;
+  integration_id?: number | null;
+  device_id?: number | null;
+  review_id?: number | null;
+  finding_id?: number | null;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  priority: string;
+  status: string;
+  assigned_to?: number | null;
+  resolution?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SupportTicketEventItem = {
+  id: number;
+  ticket_id: number;
+  event_type: string;
+  from_status?: string | null;
+  to_status?: string | null;
+  user_id?: number | null;
+  notes?: string | null;
+  created_at: string;
+};
+
+export type SupportTicketDetail = SupportTicketItem & {
+  events: SupportTicketEventItem[];
+};
+
+export type DashboardSummaryItem = {
+  reviews: {
+    total_scheduled: number;
+    total_executed: number;
+    execution_rate_pct: number;
+    open_count: number;
+    closed_count: number;
+  };
+  findings: {
+    total: number;
+    by_severity: Record<string, number>;
+    by_status: Record<string, number>;
+    critical_open: number;
+  };
+  tickets: {
+    total: number;
+    open_count: number;
+    closed_count: number;
+    avg_resolution_hours?: number | null;
+    overdue_count: number;
+  };
+  inventory: {
+    total_devices: number;
+    by_status: Record<string, number>;
+    active_consoles: number;
+    expired_licenses: number;
+  };
+  generated_at: string;
+};
+
+export type AlertItem = {
+  type: string;
+  severity: string;
+  entity_type: string;
+  entity_id: number;
+  message: string;
+  created_at: string;
+};
+
+export type AlertRefreshResult = {
+  integrations_marked_risk: number;
+  devices_marked_pending_review: number;
+};
+
+export type SnapshotItem = {
+  id: number;
+  integration_id: number;
+  device_id?: number | null;
+  snapshot_type: string;
+  raw_payload?: string | null;
+  normalized_payload?: string | null;
+};
+
+export type AuditItem = {
+  id: number;
+  action: string;
+  entity_type: string;
+  entity_id?: string | null;
+  user_id?: number | null;
+  created_at?: string | null;
+  metadata_json?: string | null;
+};
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
+  const response = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
+    ...options,
+    headers: {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(options?.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    let message = `Request failed: ${response.status}`;
+    try {
+      const errorData = await response.json();
+      message = errorData.message || errorData.detail || message;
+    } catch {
+      // ignore json parse failure
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+async function downloadFile(path: string, token: string, filenameFallback: string) {
+  const response = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filenameFallback;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function getMe(token: string): Promise<AuthUser> {
+  return request<AuthUser>("/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getUsers(token: string): Promise<DashboardUser[]> {
+  return request<DashboardUser[]>("/users/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClients(token: string): Promise<DashboardClient[]> {
+  return request<DashboardClient[]>("/clients/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClient(token: string, clientId: number): Promise<DashboardClient> {
+  return request<DashboardClient>(`/clients/${clientId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClientAccess(token: string, clientId: number): Promise<ClientAccessItem[]> {
+  return request<ClientAccessItem[]>(`/clients/${clientId}/access`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClientSites(token: string, clientId: number): Promise<ClientSiteItem[]> {
+  return request<ClientSiteItem[]>(`/client-sites?client_id=${clientId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createClientSite(token: string, payload: Omit<ClientSiteItem, "id">): Promise<ClientSiteItem> {
+  return request<ClientSiteItem>("/client-sites", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClientSite(
+  token: string,
+  siteId: number,
+  payload: Partial<Omit<ClientSiteItem, "id" | "client_id">>,
+): Promise<ClientSiteItem> {
+  return request<ClientSiteItem>(`/client-sites/${siteId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteClientSite(token: string, siteId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/client-sites/${siteId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClientContacts(token: string, clientId: number): Promise<ClientContactItem[]> {
+  return request<ClientContactItem[]>(`/client-contacts?client_id=${clientId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createClientContact(token: string, payload: Omit<ClientContactItem, "id">): Promise<ClientContactItem> {
+  return request<ClientContactItem>("/client-contacts", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClientContact(
+  token: string,
+  contactId: number,
+  payload: Partial<Omit<ClientContactItem, "id" | "client_id">>,
+): Promise<ClientContactItem> {
+  return request<ClientContactItem>(`/client-contacts/${contactId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteClientContact(token: string, contactId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/client-contacts/${contactId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getClientServices(token: string, clientId: number): Promise<ClientServiceItem[]> {
+  return request<ClientServiceItem[]>(`/client-services?client_id=${clientId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createClientService(token: string, payload: Omit<ClientServiceItem, "id">): Promise<ClientServiceItem> {
+  return request<ClientServiceItem>("/client-services", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateClientService(
+  token: string,
+  clientServiceId: number,
+  payload: Partial<Pick<ClientServiceItem, "starts_at" | "ends_at">>,
+): Promise<ClientServiceItem> {
+  return request<ClientServiceItem>(`/client-services/${clientServiceId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteClientService(token: string, clientServiceId: number): Promise<void> {
+  await request<void>(`/client-services/${clientServiceId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getCollaborators(token: string): Promise<CollaboratorProfile[]> {
+  return request<CollaboratorProfile[]>("/collaborators/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function updateCollaborator(
+  token: string,
+  profileId: number,
+  payload: { position_title?: string | null; bio?: string | null; skills_json?: string | null; seniority?: string | null; availability_status?: string | null },
+): Promise<CollaboratorProfile> {
+  return request<CollaboratorProfile>(`/collaborators/${profileId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjects(token: string): Promise<ProjectItem[]> {
+  return request<ProjectItem[]>("/projects/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getProject(token: string, projectId: number): Promise<ProjectItem> {
+  return request<ProjectItem>(`/projects/${projectId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getAreas(token: string): Promise<AreaItem[]> {
+  return request<AreaItem[]>("/areas", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getProjectTypes(token: string): Promise<ProjectTypeItem[]> {
+  return request<ProjectTypeItem[]>("/project-types", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getProducts(token: string): Promise<ProductItem[]> {
+  return request<ProductItem[]>("/products", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getServices(token?: string): Promise<ServiceItem[]> {
+  return request<ServiceItem[]>("/services/", {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function getIntegrations(token: string, clientId?: number): Promise<IntegrationItem[]> {
+  const suffix = clientId ? `?client_id=${clientId}` : "";
+  return request<IntegrationItem[]>(`/integrations/${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getIntegration(token: string, integrationId: number): Promise<IntegrationItem> {
+  return request<IntegrationItem>(`/integrations/${integrationId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function updateIntegration(
+  token: string,
+  integrationId: number,
+  payload: Partial<Pick<IntegrationItem, "name" | "base_url" | "status" | "environment" | "license_type" | "license_expires_at" | "responsible_user_id" | "config_json">>,
+): Promise<IntegrationItem> {
+  return request<IntegrationItem>(`/integrations/${integrationId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function testIntegrationConnection(
+  token: string,
+  payload: { connector_type: string; base_url: string },
+): Promise<{ connector_type: string; reachable: boolean; message: string }> {
+  return request("/integrations/test-connection", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function collectIntegration(token: string, integrationId: number): Promise<{ message: string; status: string }> {
+  return request(`/integrations/${integrationId}/collect`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getDevices(
+  token: string,
+  filters?: { client_id?: number; integration_id?: number; site_id?: number; device_status?: string },
+): Promise<DeviceItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.integration_id) params.set("integration_id", String(filters.integration_id));
+  if (filters?.site_id) params.set("site_id", String(filters.site_id));
+  if (filters?.device_status) params.set("device_status", filters.device_status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<DeviceItem[]>(`/devices/${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createDevice(
+  token: string,
+  payload: Omit<DeviceItem, "id">,
+): Promise<DeviceItem> {
+  return request<DeviceItem>("/devices/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateDevice(
+  token: string,
+  deviceId: number,
+  payload: Partial<Omit<DeviceItem, "id" | "integration_id">>,
+): Promise<DeviceItem> {
+  return request<DeviceItem>(`/devices/${deviceId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function retireDevice(token: string, deviceId: number): Promise<DeviceItem> {
+  return request<DeviceItem>(`/devices/${deviceId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function exportDevicesXlsx(
+  token: string,
+  filters?: { client_id?: number; integration_id?: number; site_id?: number; device_status?: string },
+) {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.integration_id) params.set("integration_id", String(filters.integration_id));
+  if (filters?.site_id) params.set("site_id", String(filters.site_id));
+  if (filters?.device_status) params.set("device_status", filters.device_status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return downloadFile(`/devices/export-xlsx${suffix}`, token, "inventario.xlsx");
+}
+
+export async function getSnapshots(token: string): Promise<SnapshotItem[]> {
+  return request<SnapshotItem[]>("/collection/snapshots", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getSkills(token: string): Promise<SkillItem[]> {
+  return request<SkillItem[]>("/skills/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createSkill(
+  token: string,
+  payload: { name: string; category?: string | null },
+): Promise<SkillItem> {
+  return request<SkillItem>("/skills/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getUserSkills(token: string): Promise<UserSkillItem[]> {
+  return request<UserSkillItem[]>("/skills/user-skills", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createUserSkill(
+  token: string,
+  payload: { skill_id: number; level?: string | null; user_id?: number | null },
+): Promise<UserSkillItem> {
+  return request<UserSkillItem>("/skills/user-skills", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUserSkill(
+  token: string,
+  id: number,
+  payload: { level?: string | null },
+): Promise<UserSkillItem> {
+  return request<UserSkillItem>(`/skills/user-skills/${id}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyUserSkill(
+  token: string,
+  id: number,
+  status: string,
+): Promise<UserSkillItem> {
+  return request<UserSkillItem>(`/skills/user-skills/${id}/verify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function getUserCertifications(
+  token: string,
+): Promise<UserCertificationItem[]> {
+  return request<UserCertificationItem[]>("/user-certifications/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createUserCertification(
+  token: string,
+  payload: {
+    name: string;
+    issuer?: string | null;
+    credential_id?: string | null;
+    url?: string | null;
+    issued_at?: string | null;
+    expires_at?: string | null;
+  },
+): Promise<UserCertificationItem> {
+  return request<UserCertificationItem>("/user-certifications/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUserCertification(
+  token: string,
+  id: number,
+  payload: {
+    name?: string | null;
+    issuer?: string | null;
+    credential_id?: string | null;
+    url?: string | null;
+    issued_at?: string | null;
+    expires_at?: string | null;
+  },
+): Promise<UserCertificationItem> {
+  return request<UserCertificationItem>(`/user-certifications/${id}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyUserCertification(
+  token: string,
+  id: number,
+  status: string,
+): Promise<UserCertificationItem> {
+  return request<UserCertificationItem>(`/user-certifications/${id}/verify`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function getDocTypes(token: string): Promise<DocTypeItem[]> {
+  return request<DocTypeItem[]>("/doc-types", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createDocType(
+  token: string,
+  payload: { name: string; scope: string; is_active?: boolean },
+): Promise<DocTypeItem> {
+  return request<DocTypeItem>("/doc-types", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateDocType(
+  token: string,
+  id: number,
+  payload: { name?: string | null; scope?: string | null; is_active?: boolean | null },
+): Promise<DocTypeItem> {
+  return request<DocTypeItem>(`/doc-types/${id}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjectDocs(
+  token: string,
+  params?: { project_id?: number | null; status?: string | null; visibility?: string | null },
+): Promise<ProjectDocItem[]> {
+  const query = new URLSearchParams();
+  if (params?.project_id) query.set("project_id", String(params.project_id));
+  if (params?.status) query.set("status", params.status);
+  if (params?.visibility) query.set("visibility", params.visibility);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<ProjectDocItem[]>(`/project-docs${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createProjectDoc(
+  token: string,
+  payload: {
+    project_id: number;
+    doc_type_id: number;
+    title: string;
+    summary?: string | null;
+    github_url?: string | null;
+    preview_md?: string | null;
+    visibility?: string;
+    status?: string;
+    enabled?: boolean;
+  },
+): Promise<ProjectDocItem> {
+  return request<ProjectDocItem>("/project-docs", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProjectDoc(
+  token: string,
+  id: number,
+  payload: {
+    title?: string | null;
+    summary?: string | null;
+    github_url?: string | null;
+    preview_md?: string | null;
+    visibility?: string | null;
+    status?: string | null;
+    enabled?: boolean | null;
+  },
+): Promise<ProjectDocItem> {
+  return request<ProjectDocItem>(`/project-docs/${id}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function toggleProjectDoc(
+  token: string,
+  id: number,
+  enabled: boolean,
+): Promise<ProjectDocItem> {
+  return request<ProjectDocItem>(`/project-docs/${id}/toggle`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getReports(token: string): Promise<ReportItem[]> {
+  return request<ReportItem[]>("/reports/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function exportConsolidatedReportPdf(
+  token: string,
+  payload: { client_id: number; date_from?: string; date_to?: string },
+) {
+  const params = new URLSearchParams();
+  params.set("client_id", String(payload.client_id));
+  if (payload.date_from) params.set("date_from", payload.date_from);
+  if (payload.date_to) params.set("date_to", payload.date_to);
+  return downloadFile(`/reports/consolidated-pdf?${params.toString()}`, token, "reporte-consolidado.pdf");
+}
+
+export async function exportConsolidatedReportXlsx(
+  token: string,
+  payload: { client_id: number; date_from?: string; date_to?: string },
+) {
+  const params = new URLSearchParams();
+  params.set("client_id", String(payload.client_id));
+  if (payload.date_from) params.set("date_from", payload.date_from);
+  if (payload.date_to) params.set("date_to", payload.date_to);
+  return downloadFile(`/reports/consolidated-xlsx?${params.toString()}`, token, "reporte-consolidado.xlsx");
+}
+
+export async function runReport(token: string, reportId: number): Promise<ReportRunItem> {
+  return request<ReportRunItem>(`/reports/${reportId}/run`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getReportRuns(token: string): Promise<ReportRunItem[]> {
+  return request<ReportRunItem[]>("/reports/runs", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getAuditLogs(token: string): Promise<AuditItem[]> {
+  return request<AuditItem[]>("/audit-logs/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getLeads(token: string): Promise<LeadItem[]> {
+  return request<LeadItem[]>("/leads/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createLead(
+  token: string,
+  payload: { contact_name: string; email: string; company_name?: string | null; phone?: string | null; interest_area?: string | null; message?: string | null; source?: string | null },
+): Promise<LeadItem> {
+  return request<LeadItem>("/leads/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateLeadStatus(token: string, leadId: number, status: string): Promise<LeadItem> {
+  return request<LeadItem>(`/leads/${leadId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function getJobApplications(
+  token: string,
+  filters?: JobApplicationFilters,
+): Promise<JobApplicationItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.append("status", filters.status);
+  if (filters?.desired_role) params.append("desired_role", filters.desired_role);
+  if (filters?.reviewer_id) params.append("reviewer_id", String(filters.reviewer_id));
+  if (filters?.date_from) params.append("date_from", filters.date_from);
+  if (filters?.date_to) params.append("date_to", filters.date_to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<JobApplicationItem[]>(`/job-applications/${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getJobApplication(
+  token: string,
+  applicationId: number,
+): Promise<JobApplicationItem> {
+  return request<JobApplicationItem>(`/job-applications/${applicationId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function updateJobApplicationStatus(
+  token: string,
+  applicationId: number,
+  status: string,
+): Promise<JobApplicationItem> {
+  return request<JobApplicationItem>(`/job-applications/${applicationId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function assignJobApplicationReviewer(
+  token: string,
+  applicationId: number,
+  payload: { reviewer_user_id: number; role?: string | null },
+): Promise<ApplicationAssignmentItem> {
+  return request<ApplicationAssignmentItem>(`/job-applications/${applicationId}/assign`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createJobApplicationReview(
+  token: string,
+  applicationId: number,
+  payload: { score: number; recommendation: string; notes?: string | null },
+): Promise<ApplicationReviewItem> {
+  return request<ApplicationReviewItem>(`/job-applications/${applicationId}/reviews`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createJobApplicationNote(
+  token: string,
+  applicationId: number,
+  payload: { note: string; visibility?: string },
+): Promise<ApplicationNoteItem> {
+  return request<ApplicationNoteItem>(`/job-applications/${applicationId}/notes`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createJobApplicationAttachment(
+  token: string,
+  applicationId: number,
+  payload: { file_url: string; file_type?: string | null },
+): Promise<ApplicationAttachmentItem> {
+  return request<ApplicationAttachmentItem>(`/job-applications/${applicationId}/attachments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getJobApplicationTimeline(
+  token: string,
+  applicationId: number,
+): Promise<ApplicationEventItem[]> {
+  return request<ApplicationEventItem[]>(`/job-applications/${applicationId}/timeline`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getJobApplicationAssignments(
+  token: string,
+  applicationId: number,
+): Promise<ApplicationAssignmentItem[]> {
+  return request<ApplicationAssignmentItem[]>(
+    `/job-applications/${applicationId}/assignments`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+}
+
+export async function getJobApplicationReviews(
+  token: string,
+  applicationId: number,
+): Promise<ApplicationReviewItem[]> {
+  return request<ApplicationReviewItem[]>(`/job-applications/${applicationId}/reviews`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getJobApplicationNotes(
+  token: string,
+  applicationId: number,
+): Promise<ApplicationNoteItem[]> {
+  return request<ApplicationNoteItem[]>(`/job-applications/${applicationId}/notes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getJobApplicationAttachments(
+  token: string,
+  applicationId: number,
+): Promise<ApplicationAttachmentItem[]> {
+  return request<ApplicationAttachmentItem[]>(
+    `/job-applications/${applicationId}/attachments`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+}
+
+export async function getServiceRequests(token: string): Promise<ServiceRequestItem[]> {
+  return request<ServiceRequestItem[]>("/services/requests", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createServiceRequest(
+  payload: { service_id: number; requester_name: string; requester_email: string; message?: string | null; request_type?: string | null },
+): Promise<ServiceRequestItem> {
+  return request<ServiceRequestItem>("/services/requests", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateServiceRequestStatus(
+  token: string,
+  requestId: number,
+  status: string,
+): Promise<ServiceRequestItem> {
+  return request<ServiceRequestItem>(`/services/requests/${requestId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function getSecurityReviews(
+  token: string,
+  filters?: { client_id?: number; integration_id?: number; status?: string },
+): Promise<SecurityReviewItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.integration_id) params.set("integration_id", String(filters.integration_id));
+  if (filters?.status) params.set("status", filters.status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<SecurityReviewItem[]>(`/security-reviews/${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createSecurityReview(
+  token: string,
+  payload: { client_id: number; integration_id: number; scheduled_at?: string | null; reviewer_user_id?: number | null; notes?: string | null },
+): Promise<SecurityReviewItem> {
+  return request<SecurityReviewItem>("/security-reviews/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSecurityReview(token: string, reviewId: number): Promise<SecurityReviewDetail> {
+  return request<SecurityReviewDetail>(`/security-reviews/${reviewId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function updateSecurityReview(
+  token: string,
+  reviewId: number,
+  payload: { scheduled_at?: string | null; executed_at?: string | null; status?: string | null; reviewer_user_id?: number | null; notes?: string | null },
+): Promise<SecurityReviewItem> {
+  return request<SecurityReviewItem>(`/security-reviews/${reviewId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createChecklistItem(
+  token: string,
+  reviewId: number,
+  payload: { criteria: string; result?: string | null; notes?: string | null },
+): Promise<ReviewChecklistItem> {
+  return request<ReviewChecklistItem>(`/security-reviews/${reviewId}/checklist`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReviewRecommendation(
+  token: string,
+  reviewId: number,
+  payload: { finding_id?: number | null; recommendation: string; owner_user_id?: number | null; due_date?: string | null },
+): Promise<ReviewRecommendationItem> {
+  return request<ReviewRecommendationItem>(`/security-reviews/${reviewId}/recommendations`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReviewAttachment(
+  token: string,
+  reviewId: number,
+  payload: { finding_id?: number | null; file_url: string; filename: string },
+): Promise<ReviewAttachmentItem> {
+  return request<ReviewAttachmentItem>(`/security-reviews/${reviewId}/attachments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReviewFinding(
+  token: string,
+  reviewId: number,
+  payload: { severity: string; title: string; description?: string | null; evidence_url?: string | null },
+): Promise<ReviewFindingItem> {
+  return request<ReviewFindingItem>(`/security-reviews/${reviewId}/findings`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function patchReviewFinding(
+  token: string,
+  findingId: number,
+  payload: { status?: string; severity?: string; title?: string; description?: string | null },
+): Promise<ReviewFindingItem> {
+  return request<ReviewFindingItem>(`/security-reviews/findings/${findingId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createTicketFromFinding(
+  token: string,
+  findingId: number,
+  payload: { priority: string; assigned_to?: number | null; category?: string | null; description_override?: string | null },
+): Promise<SupportTicketItem> {
+  return request<SupportTicketItem>(`/support-tickets/from-finding/${findingId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSupportTickets(
+  token: string,
+  filters?: { client_id?: number; ticket_status?: string; priority?: string; date_from?: string; date_to?: string },
+): Promise<SupportTicketItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.ticket_status) params.set("ticket_status", filters.ticket_status);
+  if (filters?.priority) params.set("priority", filters.priority);
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<SupportTicketItem[]>(`/support-tickets/${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getSupportTicket(token: string, ticketId: number): Promise<SupportTicketDetail> {
+  return request<SupportTicketDetail>(`/support-tickets/${ticketId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createSupportTicket(
+  token: string,
+  payload: { client_id: number; integration_id?: number | null; device_id?: number | null; review_id?: number | null; finding_id?: number | null; title: string; description?: string | null; category?: string | null; priority: string; assigned_to?: number | null },
+): Promise<SupportTicketItem> {
+  return request<SupportTicketItem>("/support-tickets/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateSupportTicket(
+  token: string,
+  ticketId: number,
+  payload: { title?: string | null; description?: string | null; category?: string | null; priority?: string | null; status?: string | null; assigned_to?: number | null; resolution?: string | null },
+): Promise<SupportTicketItem> {
+  return request<SupportTicketItem>(`/support-tickets/${ticketId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createSupportTicketEvent(
+  token: string,
+  ticketId: number,
+  payload: { event_type: string; notes?: string | null },
+): Promise<SupportTicketEventItem> {
+  return request<SupportTicketEventItem>(`/support-tickets/${ticketId}/events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function importSupportTickets(token: string, file: File): Promise<{ created: number; skipped: number; errors: string[] }> {
+  const body = new FormData();
+  body.append("file", file);
+  return request<{ created: number; skipped: number; errors: string[] }>("/support-tickets/import", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+}
+
+export async function exportSupportTicketsXlsx(
+  token: string,
+  filters?: { client_id?: number; ticket_status?: string; priority?: string; date_from?: string; date_to?: string },
+) {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.ticket_status) params.set("ticket_status", filters.ticket_status);
+  if (filters?.priority) params.set("priority", filters.priority);
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return downloadFile(`/support-tickets/export-xlsx${suffix}`, token, "tickets.xlsx");
+}
+
+export async function exportSecurityReviewsXlsx(
+  token: string,
+  filters?: { client_id?: number; review_status?: string; date_from?: string; date_to?: string },
+) {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.review_status) params.set("review_status", filters.review_status);
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return downloadFile(`/security-reviews/export-xlsx${suffix}`, token, "revisiones.xlsx");
+}
+
+export async function getDashboardSummary(
+  token: string,
+  filters?: { client_id?: number; date_from?: string; date_to?: string },
+): Promise<DashboardSummaryItem> {
+  const params = new URLSearchParams();
+  if (filters?.client_id) params.set("client_id", String(filters.client_id));
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<DashboardSummaryItem>(`/dashboard/summary${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getAlerts(token: string, clientId?: number): Promise<AlertItem[]> {
+  const suffix = clientId ? `?client_id=${clientId}` : "";
+  return request<AlertItem[]>(`/alerts/active${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function refreshAlerts(token: string): Promise<AlertRefreshResult> {
+  return request<AlertRefreshResult>("/alerts/refresh", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createUser(
+  token: string,
+  payload: {
+    organization_id: number;
+    full_name: string;
+    email: string;
+    password: string;
+    role_code: string;
+    job_title?: string | null;
+  },
+): Promise<DashboardUser> {
+  return request<DashboardUser>("/users/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUser(
+  token: string,
+  userId: number,
+  payload: {
+    full_name?: string | null;
+    job_title?: string | null;
+    is_active?: boolean | null;
+    role_code?: string | null;
+  },
+): Promise<DashboardUser> {
+  return request<DashboardUser>(`/users/${userId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteUser(token: string, userId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/users/${userId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createClient(
+  token: string,
+  payload: {
+    organization_id: number;
+    company_name: string;
+    commercial_status?: string;
+    sector?: string | null;
+    size?: string | null;
+    notes?: string | null;
+  },
+): Promise<DashboardClient> {
+  return request<DashboardClient>("/clients/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createProject(
+  token: string,
+  payload: {
+    organization_id: number;
+    client_id?: number | null;
+    project_type_id?: number | null;
+    service_id?: number | null;
+    product_id?: number | null;
+    name: string;
+    description?: string | null;
+    status?: string;
+    start_date?: string | null;
+    end_date?: string | null;
+  },
+): Promise<ProjectItem> {
+  return request<ProjectItem>("/projects/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProject(
+  token: string,
+  projectId: number,
+  payload: {
+    name?: string | null;
+    description?: string | null;
+    status?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  },
+): Promise<ProjectItem> {
+  return request<ProjectItem>(`/projects/${projectId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProject(token: string, projectId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/projects/${projectId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getProjectMembers(
+  token: string,
+  projectId: number,
+): Promise<ProjectMemberItem[]> {
+  return request<ProjectMemberItem[]>(`/project-members?project_id=${projectId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createProjectMember(
+  token: string,
+  payload: {
+    project_id: number;
+    user_id: number;
+    role_in_project?: string | null;
+    allocation_percentage?: number | null;
+    can_publish_docs?: boolean;
+    assignment_type?: string;
+    is_required?: boolean;
+  },
+): Promise<{ message: string }> {
+  return request<{ message: string }>("/project-members", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjectRequirements(
+  token: string,
+  projectId: number,
+): Promise<ProjectRequirementItem[]> {
+  return request<ProjectRequirementItem[]>(`/project-requirements?project_id=${projectId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createProjectRequirement(
+  token: string,
+  payload: { project_id: number; skill_id: number; level?: string | null; is_required?: boolean },
+): Promise<ProjectRequirementItem> {
+  return request<ProjectRequirementItem>("/project-requirements", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProjectRecommendations(
+  token: string,
+  projectId: number,
+  refresh = false,
+): Promise<ProjectRecommendationItem[]> {
+  const suffix = refresh ? `?project_id=${projectId}&refresh=true` : `?project_id=${projectId}`;
+  return request<ProjectRecommendationItem[]>(`/project-recommendations${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function createCollaborator(
+  token: string,
+  payload: {
+    user_id: number;
+    position_title?: string | null;
+    bio?: string | null;
+    skills_json?: string | null;
+    seniority?: string | null;
+    availability_status?: string | null;
+    portfolio_url?: string | null;
+  },
+): Promise<CollaboratorProfile> {
+  return request<CollaboratorProfile>("/collaborators/", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteCollaborator(token: string, profileId: number): Promise<{ message: string }> {
+  return request<{ message: string }>(`/collaborators/${profileId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}

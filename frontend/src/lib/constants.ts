@@ -1,0 +1,16 @@
+export const JOB_TITLE_OPTIONS = [
+  "Founder",
+  "CEO",
+  "CTO",
+  "COO",
+  "CISO",
+  "Gerente TI",
+  "SOC Analyst",
+  "Security Engineer",
+  "Network Engineer",
+  "DevOps Engineer",
+  "Project Manager",
+  "Account Manager",
+  "Soporte Tecnico",
+  "Otro",
+];

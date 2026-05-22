@@ -1,0 +1,78 @@
+# ─── Secretos / Entornos ────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.development
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# ─── Python / Backend ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# ─── Node / Next.js / Frontend ──────────────────────────────────────
+node_modules/
+.next/
+out/
+.turbo/
+.swc/
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── Docker / Infra ─────────────────────────────────────────────────
+*.local.yml
+docker-compose.override.yml
+
+# ─── OS / Editores ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.iml
+
+# ─── Logs y temporales ──────────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# ─── Herramientas de IA / Local ─────────────────────────────────────
+.agents/
+.claude/
+skills-lock.json
+testsprite_tests/
+/app/
+
+# ─── PostgreSQL ─────────────────────────────────────────────────────
+*.sql.dump
+postgres_data/
+
+# ─── Reportes generados ─────────────────────────────────────────────
+backend/reports_output/
+backend/generated/
+backend/*.pdf
+backend/*.xlsx
+frontend/out/
