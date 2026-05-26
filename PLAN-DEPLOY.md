@@ -10,11 +10,12 @@
 | Decisión | Valor elegido |
 |---|---|
 | Hipervisor | **VMware ESXi / vSphere** |
-| Estrategia CI/CD | **GitHub Actions + SSH deploy** |
+| Estrategia CI/CD | **Self-hosted GitHub runner en VLAN20** (cero SSH público) |
 | DNS público | **DuckDNS** (`ninjasec.duckdns.org`) |
 | HTTPS | **Let's Encrypt via Caddy** |
 | OS de las VMs | **Ubuntu Server 22.04 LTS** |
 | DB | **PostgreSQL 16** en VM separada (VLAN30 DC) |
+| VMs totales | **3** — `ninjasec-web` (DMZ) · `ninjasec-db` (DC) · `ninjasec-runner` (DMZ) |
 | Repo | **https://github.com/marksato13/PY_NINJASEC** |
 
 **Tiempo estimado total:** ~3 horas (se puede partir en 2 sesiones)
@@ -604,27 +605,191 @@ vSphere → snapshot de `ninjasec-web` → nombre: `first-deploy-ok`
 
 ---
 
-# 🤖 FASE 2.8 — Configurar CI/CD (GitHub Actions auto-deploy)
+# 🤖 FASE 2.8 — Configurar CI/CD con Self-Hosted Runner (DECIDIDO)
 
-> **Tiempo:** 30 min
+> **Estrategia elegida:** Self-Hosted Runner dentro de tu red (VLAN20).
+> **Por qué:** cero exposición SSH al público. El runner hace long-poll HTTPS *saliente* a GitHub; cuando hay un job, lo ejecuta localmente.
+> **Tiempo:** 45 min
 
-## 2.8.1 Agregar secrets en GitHub
+## Arquitectura del CI/CD
 
-Ir a **https://github.com/marksato13/PY_NINJASEC/settings/secrets/actions**
+```
+┌─ Internet ─────────────────────────────────────────────┐
+│                                                         │
+│  GitHub                                                 │
+│   ↑ (1) long-poll HTTPS saliente — el runner pregunta  │
+│   ↓ (2) "hay job nuevo" → GitHub responde con el job   │
+│                                                         │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                  pfSense (NAT outbound)
+                       │
+        VLAN20 DMZ ────┼──────────────
+                       │
+              ┌────────▼──────────┐
+              │ VM ninjasec-runner│ (1GB RAM, 20GB disk)
+              │ 192.168.10.6      │
+              │ ────────────────  │
+              │ GitHub Actions    │
+              │ self-hosted runner│
+              └────────┬──────────┘
+                       │
+                  SSH local (192.168.10.6 → 192.168.10.4)
+                       │
+              ┌────────▼──────────┐
+              │ VM ninjasec-web   │
+              │ 192.168.10.4      │
+              │ git pull + docker │
+              │ compose up        │
+              └────────────────────┘
+```
 
-Crear estos secrets:
+> 🔒 **Beneficios:** ningún puerto inbound abierto al público para SSH. Solo el 80/443 público (que ya está expuesto para HTTPS).
 
-| Secret name | Valor |
+## 2.8.1 Crear VM `ninjasec-runner` en ESXi (10 min)
+
+Repetir Fase 2.2 con estos parámetros:
+
+| Parámetro | Valor |
 |---|---|
-| `DEPLOY_SSH_KEY` | Contenido de `~/.ssh/ninjasec_deploy` (la privada — todo, incluyendo `-----BEGIN...-----` y `-----END...-----`) |
-| `DEPLOY_HOST` | IP pública de pfSense WAN1 (donde está NAT 22→192.168.10.4) o un dominio que apunte ahí |
-| `DEPLOY_USER` | `ninjadeploy` |
-| `DEPLOY_PORT` | `22` (o el que uses) |
+| Name | `ninjasec-runner` |
+| CPU | 2 vCPUs |
+| Memory | 2 GB |
+| Hard disk | 20 GB Thin Provision |
+| Network Adapter | `PG-VLAN20-DMZ` |
+| OS | Ubuntu Server 22.04 |
+| IP | `192.168.10.6` (mismo gateway, mismo DNS) |
+| Hostname | `ninjasec-runner` |
+| Username | `runner` |
+| SSH Server | ☑ |
 
-> ⚠️ **Importante:** para que GitHub Actions pueda SSH al server, necesitás:
-> - **Opción A (más fácil pero más expuesta):** NAT 22 público → 192.168.10.4:22 con regla pfSense que permita solo IPs de GitHub Actions
-> - **Opción B (más segura, recomendada):** WireGuard o Tailscale entre GitHub runner y el server. Más config pero más seguro.
-> - **Opción C (intermedia):** Self-hosted runner en una VM en VLAN20. GitHub Actions corre adentro de tu red, no hace falta abrir SSH al público.
+## 2.8.2 Sistema base + tools en la VM runner
+
+```bash
+ssh runner@192.168.10.6
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git ufw fail2ban openssh-client
+
+# Firewall mínimo
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow from 192.168.1.0/24 to any port 22 comment "SSH admin"
+sudo ufw enable
+sudo systemctl enable --now fail2ban
+```
+
+## 2.8.3 Generar SSH key del runner para conectarse a la web VM
+
+```bash
+# En la VM runner
+ssh-keygen -t ed25519 -C "github-runner@ninjasec" -f ~/.ssh/web_deploy -N ""
+
+# Copiar la pubkey al server web (autoriza al runner a hacer SSH local)
+ssh-copy-id -i ~/.ssh/web_deploy.pub ninjadeploy@192.168.10.4
+# (Requiere password de ninjadeploy. Si no tiene, ver Fase 2.4.4 para alternativas.)
+
+# Test
+ssh -i ~/.ssh/web_deploy ninjadeploy@192.168.10.4 "echo Hola desde runner"
+# Esperado: "Hola desde runner"
+```
+
+## 2.8.4 Registrar el self-hosted runner en GitHub
+
+1. Ir a **https://github.com/marksato13/PY_NINJASEC/settings/actions/runners**
+2. Click **New self-hosted runner**
+3. Seleccionar **Linux / x64**
+4. GitHub te da los comandos exactos. Copialos. Algo así:
+
+```bash
+# En la VM runner (como user "runner")
+mkdir actions-runner && cd actions-runner
+
+# Download (la URL cambia por versión)
+curl -o actions-runner-linux-x64-2.X.X.tar.gz -L \
+  https://github.com/actions/runner/releases/download/v2.X.X/actions-runner-linux-x64-2.X.X.tar.gz
+
+# Verify
+echo "SHA256_HASH_DE_GITHUB  actions-runner-linux-x64-2.X.X.tar.gz" | shasum -a 256 -c
+
+# Extract
+tar xzf ./actions-runner-linux-x64-2.X.X.tar.gz
+
+# Configurar (te pide URL del repo + TOKEN de registro de GitHub)
+./config.sh --url https://github.com/marksato13/PY_NINJASEC --token <TOKEN>
+# Labels sugeridos: self-hosted, linux, ninjasec
+# Work folder: _work (default)
+```
+
+## 2.8.5 Instalar runner como servicio systemd (para que arranque solo)
+
+```bash
+sudo ./svc.sh install runner
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+Verificar en GitHub: la página de runners debe mostrar el nuevo runner como **Idle** (verde).
+
+## 2.8.6 Crear workflow `.github/workflows/deploy.yml`
+
+(Lo creo yo en el siguiente commit del repo)
+
+```yaml
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # ← usa el runner que registramos
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH to web VM
+        run: |
+          ssh -i ~/.ssh/web_deploy -o StrictHostKeyChecking=accept-new \
+              ninjadeploy@192.168.10.4 <<'EOF'
+            set -e
+            cd /opt/ninjasec
+            git fetch origin main
+            git reset --hard origin/main
+            cd infra
+            docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+            docker exec ninjasec-backend bash -c "cd /app && PYTHONPATH=/app alembic upgrade head"
+            docker image prune -f
+            echo "✅ Deploy completado"
+          EOF
+
+      - name: Smoke test
+        run: |
+          sleep 10
+          curl -fsSL https://ninjasec.duckdns.org/health || exit 1
+          echo "✅ Health check OK"
+```
+
+## 2.8.7 Probar el flujo end-to-end
+
+```bash
+# En tu PC local
+echo "# Test deploy $(date)" >> README.md
+git add README.md
+git commit -m "test: trigger deploy CI/CD"
+git push origin main
+```
+
+Ir a https://github.com/marksato13/PY_NINJASEC/actions y ver el workflow ejecutándose en el self-hosted runner. Esperado:
+- ✅ Job arranca en `self-hosted` runner
+- ✅ SSH al web VM
+- ✅ git pull + rebuild
+- ✅ Smoke test pasa
+
+## 2.8.8 Snapshot post-CI/CD
+
+vSphere → snapshot de las 3 VMs (`runner`, `web`, `db`) → nombre: `ci-cd-ready`
 
 ## 2.8.2 Crear workflow `.github/workflows/deploy.yml`
 
