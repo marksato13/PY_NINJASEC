@@ -352,17 +352,29 @@ Esperás:
 
 ## 2.4.7 Configurar `.env` de producción
 
+> ⚠️ **MUY IMPORTANTE — leé antes de tocar el `.env`:**
+>
+> Los marcadores de tipo `REEMPLAZAR_PASSWORD_DB`, `REEMPLAZAR_JWT_SECRET`, etc.
+> **NO son parte del valor**. Hay que reemplazar la **palabra completa** por el
+> secreto real. Ejemplo correcto:
+>
+> ```
+> POSTGRES_PASSWORD=rHmqYW443IySi7F9Ep2NxkZX     ✅
+> POSTGRES_PASSWORD=<rHmqYW443IySi7F9Ep2NxkZX>   ❌ los <> se mandan literales al DATABASE_URL
+> POSTGRES_PASSWORD=REEMPLAZAR_PASSWORD_DB       ❌ olvidaste reemplazar
+> ```
+
 ```bash
 sudo -u ninjadeploy nano /opt/ninjasec/infra/.env
 ```
 
-Reemplazá el contenido por:
+Reemplazá el contenido por (las palabras `REEMPLAZAR_*` deben sustituirse por el valor real):
 
 ```ini
 # ─── PostgreSQL (apunta a la VM DC) ─────────────────────────────────
 POSTGRES_DB=ninjasec
 POSTGRES_USER=ninjasec_app
-POSTGRES_PASSWORD=<EL_PASSWORD_DE_FASE_2.3.4>
+POSTGRES_PASSWORD=REEMPLAZAR_PASSWORD_DB
 POSTGRES_HOST=192.168.30.100
 POSTGRES_PORT=5432
 
@@ -371,7 +383,7 @@ APP_NAME=NinjaSec
 APP_VERSION=0.2.0
 API_PREFIX=/api/v1
 # Generar con: python3 -c "import secrets; print(secrets.token_urlsafe(64))"
-JWT_SECRET_KEY=<PEGAR_AQUI_EL_TOKEN_DE_64_BYTES>
+JWT_SECRET_KEY=REEMPLAZAR_JWT_SECRET
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 CORS_ORIGINS=https://ninjasec.duckdns.org
@@ -384,23 +396,58 @@ BACKEND_INTERNAL_URL=http://backend:8024
 
 # ─── Producción (DuckDNS / Let's Encrypt) ───────────────────────────
 DOMAIN=ninjasec.duckdns.org
-DUCKDNS_TOKEN=<SE_LLENA_EN_FASE_2.6>
+DUCKDNS_TOKEN=
 ACME_EMAIL=makosdfrs@gmail.com
 ```
 
-Generación del JWT secret (correr una sola vez en tu PC o en el server):
+> `DUCKDNS_TOKEN=` queda **vacío** hasta FASE 2.6. No poner placeholder ahí.
+
+### Obtener los 2 secretos
+
+**`REEMPLAZAR_PASSWORD_DB`** — el que guardaste en la DB en FASE 2.3.4:
+
+```bash
+# En la VM db
+sudo cat /root/.ninjasec-db-pass
+```
+
+(Si ya lo borraste con `shred -u`, lo tenés que tener en el password manager.)
+
+**`REEMPLAZAR_JWT_SECRET`** — generá uno nuevo:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
-# Pegar el output como JWT_SECRET_KEY=...
 ```
 
-Permisos finales del `.env`:
+### Validar que NO quedaron placeholders
+
+```bash
+grep -E 'REEMPLAZAR|<.*>' /opt/ninjasec/infra/.env
+```
+
+**Debe no devolver nada**. Si aparece algo, todavía hay un placeholder sin reemplazar.
+
+### Permisos finales del `.env`
 
 ```bash
 sudo chmod 600 /opt/ninjasec/infra/.env
 sudo chown ninjadeploy:ninjadeploy /opt/ninjasec/infra/.env
 ```
+
+### Smoke-test del DATABASE_URL ya armado
+
+```bash
+sudo -u ninjadeploy docker compose -f /opt/ninjasec/infra/docker-compose.prod.yml \
+  --env-file /opt/ninjasec/infra/.env config | grep DATABASE_URL
+```
+
+Esperás (con tu password real):
+
+```
+DATABASE_URL: postgresql+psycopg://ninjasec_app:rHmqYW443IySi7F9Ep2NxkZX@192.168.30.100:5432/ninjasec
+```
+
+Sin `<>`, sin `REEMPLAZAR_*`, sin espacios raros.
 
 ---
 
@@ -559,23 +606,54 @@ Si falla con `service "X" depends on undefined service "Y"`: el heredoc se cort�
 
 ## 2.4.9 Caddyfile
 
-Confirmar que `/opt/ninjasec/infra/Caddyfile` existe y apunta al frontend interno. Si no, ajustarlo así (ejemplo mínimo):
+> ⚠️ **El contenido de abajo va DENTRO del archivo `Caddyfile`. NO se pega en bash.**
+>
+> Si pegás `{$DOMAIN} { encode zstd gzip ... }` directamente en la terminal, bash
+> intenta ejecutar `encode`, `tls`, `reverse_proxy` como comandos y vas a ver
+> `command not found`. Es harmless pero no hace nada útil.
 
-```caddy
+### Paso 1 — Ver qué Caddyfile trae el repo
+
+```bash
+cat /opt/ninjasec/infra/Caddyfile
+```
+
+El repo ya viene con uno. Si su contenido es razonable (tiene `{$DOMAIN}`,
+`reverse_proxy backend:8024` y `reverse_proxy frontend:3018`), **saltá al paso 3**.
+
+### Paso 2 — Sólo si está vacío o roto: sobreescribir con heredoc
+
+```bash
+sudo -u ninjadeploy tee /opt/ninjasec/infra/Caddyfile > /dev/null <<'EOF'
 {$DOMAIN} {
     encode zstd gzip
     tls {$ACME_EMAIL}
 
-    # API proxy al backend
     @api path /api/*
     reverse_proxy @api backend:8024
 
-    # Resto al frontend Next.js
     reverse_proxy frontend:3018
 }
+EOF
 ```
 
-> El Caddyfile ya está versionado en el repo. Sólo modificalo si la config local difiere.
+Notar las **comillas simples** alrededor de `'EOF'`. Eso evita que bash expanda
+`${DOMAIN}` y `${ACME_EMAIL}` al escribir el archivo — Caddy los resuelve solo
+desde las env vars del container.
+
+### Paso 3 — Validar la sintaxis con Caddy mismo
+
+```bash
+sudo -u ninjadeploy docker run --rm -v /opt/ninjasec/infra/Caddyfile:/etc/caddy/Caddyfile:ro \
+  caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+Esperás:
+```
+Valid configuration
+```
+
+Si falla, te dice exactamente la línea con el error.
 
 ---
 
@@ -607,6 +685,23 @@ Descripción: Docker + Compose instalados, ninjadeploy con clave SSH de
              UFW + fail2ban activos.
              NOTA: SSH hardening POSTPUESTO (ver 2.4.1b).
 ```
+
+---
+
+## Errores comunes vistos durante el deploy
+
+Tropezones reales que aparecieron en la primera pasada y cómo evitarlos:
+
+| Síntoma                                                           | Causa                                                                  | Fix                                                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `passwd: user 'ninja' does not exist`                             | El plan asume `ninja`, pero la VM se creó con `m4rk` (u otro)         | Usar el user real (`m4rk`). Ver sección "Convención de usuarios"        |
+| `Permission denied, please try again.` en SSH con password OK     | El user `ninja` no existe, no es un problema de password               | Idem arriba                                                             |
+| `additional properties 'bu  ild' not allowed`                     | `nano` se comió/agregó un espacio al editar el YAML                    | Restaurar con `git checkout -- infra/docker-compose.prod.yml` y usar el heredoc de 2.4.8 |
+| `service "backend" depends on undefined service "postgres"`       | Se comentó `services.postgres` pero no `backend.depends_on.postgres`   | Usar el heredoc de 2.4.8 (reemplaza el archivo completo)                |
+| `DATABASE_URL: …:<password>@…` con `<>` literales                 | Se dejaron los corchetes del placeholder en el `.env`                  | Ver 2.4.7 — los `<>` no son parte del valor                             |
+| `encode: command not found`, `tls: command not found`, etc.       | Se pegó el contenido del Caddyfile **en bash** en vez de en el archivo | Ver 2.4.9 — el contenido va con `tee > archivo <<'EOF' … EOF`           |
+| `Load key … invalid format` al testear `ssh -i ninjasec_deploy`   | Paste corrupto al hacer `cat > file` en vez de `nano`                  | Ver 2.4.5 — usar `nano` y verificar con `head/tail/wc -l`               |
+| `cat: …/99-ninjasec.conf: No such file or directory` (al deshacer) | El hardening nunca se aplicó realmente                                 | No hace falta deshacer — ver 2.4.1b                                     |
 
 ---
 
