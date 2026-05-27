@@ -64,7 +64,52 @@ sudo dpkg-reconfigure --priority=low unattended-upgrades
 
 ## 2.4.1b SSH hardening
 
-> Subí tu clave pública a `~ninja/.ssh/authorized_keys` y probá login por clave antes de cerrar password-auth.
+> 🛑 **STOP. NO ejecutes el bloque de `sshd_config.d/99-ninjasec.conf` todavía.**
+>
+> El hardening cierra el login por password. Si tu clave SSH **NO** está cargada en
+> `~ninja/.ssh/authorized_keys` antes del restart de sshd, te quedás afuera de la VM
+> y vas a tener que recuperar acceso por la consola del hipervisor.
+>
+> Ejecutá primero los pasos (a) y (b) y validá (c) antes de pasar a (d).
+
+### (a) En la VM admin (VLAN10) — clave SSH para gestión
+
+Si todavía no tenés clave SSH en la VM admin, generala:
+
+```bash
+# En la VM admin
+ls -la ~/.ssh/id_ed25519 2>/dev/null && echo "ya existe" || ssh-keygen -t ed25519 -C "ninja-admin@vlan10"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Copiá la línea de la pubkey al clipboard.
+
+### (b) Cargar la pubkey en la VM web (vía password, mientras todavía se puede)
+
+Desde la **VM admin**:
+
+```bash
+ssh-copy-id ninja@192.168.20.100
+# Te pide el password de ninja UNA vez y carga la pubkey en authorized_keys
+```
+
+Alternativa manual si `ssh-copy-id` no está disponible:
+
+```bash
+cat ~/.ssh/id_ed25519.pub | ssh ninja@192.168.20.100 \
+  'mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
+   cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+```
+
+### (c) ✅ Validar que entrás con clave SIN password
+
+```bash
+ssh ninja@192.168.20.100 "whoami && hostname"
+# Debe responder "ninja" + hostname, SIN pedir password.
+# Si te pide password → NO sigas con (d). Revisá perms en ~/.ssh y authorized_keys.
+```
+
+### (d) Recién ahora aplicar el hardening (dentro de la VM web por SSH)
 
 ```bash
 sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
@@ -76,7 +121,18 @@ EOF
 sudo sshd -t && sudo systemctl restart ssh
 ```
 
-> El `AllowUsers` incluye `ninjadeploy` desde ya porque lo vamos a crear en 2.4.3 y GitHub Actions necesita poder loguear.
+> El `AllowUsers` incluye `ninjadeploy` desde ya porque lo vamos a crear en 2.4.4 y GitHub Actions necesita poder loguear.
+
+### Si te quedaste afuera
+
+Consola web del hipervisor → login local con `ninja` + password → cargar pubkey manualmente:
+
+```bash
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+echo 'ssh-ed25519 AAAA... ninja-admin@vlan10' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
 
 ---
 

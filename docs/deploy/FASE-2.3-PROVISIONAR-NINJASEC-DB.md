@@ -50,7 +50,48 @@ sudo systemctl status fail2ban --no-pager
 
 ## 2.3.1b SSH hardening
 
-> **Antes de ejecutar:** subí tu clave pública a `~ninja/.ssh/authorized_keys` y probá que el login por clave funciona (`ssh ninja@192.168.30.100`). Si no, te quedás afuera.
+> 🛑 **STOP. NO ejecutes el bloque de `sshd_config.d/99-ninjasec.conf` todavía.**
+>
+> El hardening cierra el login por password. Si tu clave SSH **NO** está cargada en
+> `~ninja/.ssh/authorized_keys` antes del restart de sshd, te quedás afuera de la VM
+> y tenés que recuperar acceso por la consola del hipervisor.
+>
+> Ejecutá primero (a) y (b), validá (c) antes de (d).
+
+### (a) En la VM admin (VLAN10) — clave SSH para gestión
+
+```bash
+# En la VM admin (VLAN10), si todavía no la tenés:
+ls -la ~/.ssh/id_ed25519 2>/dev/null && echo "ya existe" || ssh-keygen -t ed25519 -C "ninja-admin@vlan10"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Copiá la línea de la pubkey al clipboard.
+
+### (b) Cargar la pubkey en la VM db (vía password, mientras todavía se puede)
+
+Desde la **VM admin**:
+
+```bash
+ssh-copy-id ninja@192.168.30.100
+```
+
+Alternativa manual:
+
+```bash
+cat ~/.ssh/id_ed25519.pub | ssh ninja@192.168.30.100 \
+  'mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
+   cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+```
+
+### (c) ✅ Validar que entrás con clave SIN password
+
+```bash
+ssh ninja@192.168.30.100 "whoami && hostname"
+# Debe responder sin pedir password. Si lo pide, NO sigas con (d).
+```
+
+### (d) Recién ahora aplicar el hardening (dentro de la VM db por SSH)
 
 ```bash
 sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
@@ -62,9 +103,16 @@ EOF
 sudo sshd -t && sudo systemctl restart ssh
 ```
 
-### ✅ Checkpoint
-- `sudo sshd -t` no devuelve nada (config válida).
-- Abrí **otra terminal** y probá `ssh ninja@192.168.30.100` antes de cerrar la actual.
+### Si te quedaste afuera
+
+Consola web del hipervisor → login local con `ninja` + password → cargar pubkey manualmente:
+
+```bash
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+echo 'ssh-ed25519 AAAA... ninja-admin@vlan10' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
 
 ---
 
