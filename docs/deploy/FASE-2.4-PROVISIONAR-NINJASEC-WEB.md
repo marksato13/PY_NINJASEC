@@ -14,10 +14,25 @@
 
 | Componente            | IP                  | Rol                              |
 | --------------------- | ------------------- | -------------------------------- |
-| Admin LAN             | `192.168.1.0/24`    | Tu laptop / red de gestión       |
+| Admin LAN             | `192.168.1.0/24`    | Red de gestión (donde vive la VM admin) |
 | **Web (DMZ)**         | **`192.168.20.100`**| **VM `ninjasec-web` (esta fase)**|
 | DB (Datacenter)       | `192.168.30.100`    | VM `ninjasec-db` (FASE 2.3)      |
 | Dominio (FASE 2.6)    | `ninjasec.duckdns.org` | Apunta a IP pública WAN       |
+
+## Máquinas involucradas en este plan
+
+> Importante leer antes de ejecutar: hay 3 "máquinas" distintas mencionadas a lo largo del documento. No son la misma.
+
+| Etiqueta en el plan | Qué es realmente                              | Cómo se accede                              |
+| ------------------- | --------------------------------------------- | ------------------------------------------- |
+| **Laptop**          | Tu PC con PowerShell                          | Directamente, en tu red local de casa/oficina |
+| **VM admin (VLAN10)** | VM dentro del hipervisor, en `192.168.1.0/24` | Por consola del hipervisor o un acceso intermedio (VPN/jumphost) — sólo desde acá hay ruta directa a VLAN20 y VLAN30 |
+| **VM web (VLAN20)** | VM que estamos provisionando, `192.168.20.100`| SSH **desde la VM admin** (no desde la laptop) |
+
+Regla general:
+- Los pasos **dentro** de la VM web → SSH desde la VM admin.
+- La generación del par SSH para GitHub Actions → puede hacerse en la laptop (es donde tenés tu password manager y tu browser para pegar el Secret en GitHub).
+- La copia de la **pubkey** al server → vía la VM admin (paso B en 2.4.5).
 
 ---
 
@@ -135,9 +150,13 @@ sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys
 
 ---
 
-## 2.4.5 Generar SSH key para GitHub Actions (en tu PC local)
+## 2.4.5 Generar SSH key para GitHub Actions
 
-> ⚠️ Estos comandos van en **tu laptop admin**, NO en el servidor.
+> ⚠️ **Importante sobre dónde se ejecuta cada bloque:**
+>
+> - La **generación** del par de claves puede hacerse en cualquier máquina (tu laptop con PowerShell, tu VM admin en VLAN10, una WSL, etc.). Lo importante es que la **privada** termine como Secret de GitHub y la **pública** en el server.
+> - La **copia de la pubkey al server** (`192.168.20.100`) requiere una máquina con **ruta de red a la VLAN20**. Tu laptop directa no rutea a las VLANs del hipervisor — usá tu **VM admin en VLAN10** para esto.
+> - La privada `ninjasec_deploy` la consume GitHub Actions; no necesita quedar copiada permanentemente en la VM admin.
 
 ### En PowerShell (Windows)
 
@@ -174,39 +193,66 @@ Esperás:
 - `ninjasec_deploy`     — **privada** (va al Secret de GitHub `DEPLOY_SSH_KEY`)
 - `ninjasec_deploy.pub` — **pública** (va al server)
 
-Copiar la pública al server (el método estándar `ssh-copy-id` no funciona porque `ninjadeploy` no tiene password):
+### Copiar la pubkey al server (vía VM admin)
 
-### En PowerShell
+Como la laptop no rutea a la VLAN20 directamente, hacelo en 2 pasos:
+
+**Paso A — en la laptop (donde generaste la clave), mostrar el contenido de la pubkey:**
 
 ```powershell
-Get-Content $HOME\.ssh\ninjasec_deploy.pub | ssh ninja@192.168.20.100 "sudo tee -a /home/ninjadeploy/.ssh/authorized_keys >/dev/null && sudo chown ninjadeploy:ninjadeploy /home/ninjadeploy/.ssh/authorized_keys && sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys"
+Get-Content $HOME\.ssh\ninjasec_deploy.pub
 ```
 
-> Te va a pedir el password de `ninja` (porque la línea usa `sudo`). El `&&` funciona porque se ejecuta dentro del shell remoto (bash), no en PowerShell.
+Bash/WSL equivalente:
+```bash
+cat ~/.ssh/ninjasec_deploy.pub
+```
 
-### En bash / WSL / Linux
+Salida esperada (una sola línea):
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...XXXX github-actions-ninjasec
+```
+
+Copiala **completa** al clipboard.
+
+**Paso B — desde la VM admin (VLAN10), SSH a la web y agregarla:**
 
 ```bash
-cat ~/.ssh/ninjasec_deploy.pub | ssh ninja@192.168.20.100 \
-  'sudo tee -a /home/ninjadeploy/.ssh/authorized_keys >/dev/null && \
-   sudo chown ninjadeploy:ninjadeploy /home/ninjadeploy/.ssh/authorized_keys && \
-   sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys'
+ssh ninja@192.168.20.100
+```
+
+Una vez dentro de la VM web, pegá la línea entre las comillas simples del `echo`:
+
+```bash
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...XXXX github-actions-ninjasec' | \
+  sudo tee -a /home/ninjadeploy/.ssh/authorized_keys >/dev/null
+
+sudo chown ninjadeploy:ninjadeploy /home/ninjadeploy/.ssh/authorized_keys
+sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys
+
+# Verificar que quedó la línea correcta
+sudo cat /home/ninjadeploy/.ssh/authorized_keys
 ```
 
 ### ✅ Checkpoint
-Probá el login automatizado **desde tu PC** (PowerShell o bash da igual, el comando es idéntico):
+Probá el login automatizado **desde la VM admin** (no desde la laptop). Como la privada vive en la laptop, copiala temporalmente para el test:
 
-```bash
-ssh -i ~/.ssh/ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"
-# debe responder: ninjadeploy + lista vacía de containers
-```
-
-En PowerShell el `~` también funciona como `$HOME`. Si te da problemas, usá:
+En la laptop:
 ```powershell
-ssh -i $HOME\.ssh\ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"
+scp $HOME\.ssh\ninjasec_deploy ninja@<ip-vm-admin>:~/ninjasec_deploy_test
 ```
 
-Si pide password → el `authorized_keys` no quedó bien.
+En la VM admin:
+```bash
+chmod 600 ~/ninjasec_deploy_test
+ssh -i ~/ninjasec_deploy_test ninjadeploy@192.168.20.100 "whoami && docker ps"
+# debe responder: ninjadeploy + lista vacía de containers
+shred -u ~/ninjasec_deploy_test     # borrar el test, no la necesitamos permanente acá
+```
+
+Si pide password → el `authorized_keys` quedó mal (revisar perms y owner).
+
+> **Por qué la privada no se queda en la VM admin:** la usa GitHub Actions (en `Settings → Secrets → DEPLOY_SSH_KEY`). La VM admin no necesita deployar manualmente.
 
 ---
 
