@@ -406,71 +406,154 @@ sudo chown ninjadeploy:ninjadeploy /opt/ninjasec/infra/.env
 
 ## 2.4.8 Ajustar `docker-compose.prod.yml` (Postgres remoto)
 
-Como PostgreSQL corre en `ninjasec-db` (192.168.30.100), hay que:
-1. **Comentar** el servicio `postgres:` (líneas 38–61 del repo actual).
-2. **Comentar** la dependencia `depends_on: postgres` del servicio `backend:` (líneas 70–72).
-3. **Comentar** el volumen `postgres_data:` al final.
+Como PostgreSQL corre en `ninjasec-db` (192.168.30.100), el `docker-compose.prod.yml` del repo trae 3 cosas que sobran:
+1. Servicio `postgres:` completo.
+2. `depends_on: postgres` dentro de `backend:`.
+3. Volumen `postgres_data:` al final.
+
+**Recomendación:** en vez de andar comentando línea por línea con `nano` (donde es facilísimo desindentar y romper el YAML), **reemplazá el archivo completo** con la versión limpia de abajo. Mucho menos error-prone.
+
+### Backup del original (por si querés diff después)
 
 ```bash
-sudo -u ninjadeploy nano /opt/ninjasec/infra/docker-compose.prod.yml
+sudo -u ninjadeploy cp /opt/ninjasec/infra/docker-compose.prod.yml \
+                       /opt/ninjasec/infra/docker-compose.prod.yml.orig
 ```
 
-### Cambios exactos
+### Si ya editaste a mano y quedó roto: restaurar del repo primero
 
-```diff
-   # ─── PostgreSQL (opcional aquí; ideal en VLAN30 DC) ────────────────
--  # Comentar este bloque si Postgres corre en otro server.
--  postgres:
--    image: postgres:16-alpine
--    container_name: ninjasec-postgres
--    restart: unless-stopped
--    environment:
--      POSTGRES_DB:       ${POSTGRES_DB}
--      POSTGRES_USER:     ${POSTGRES_USER}
--      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
--    volumes:
--      - postgres_data:/var/lib/postgresql/data
--      - ./backups:/backups
--    healthcheck:
--      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
--      interval: 10s
--      timeout: 5s
--      retries: 10
--    networks:
--      - ninjasec-net
--    ports:
--      - "127.0.0.1:5432:5432"
-+  # Postgres corre en 192.168.30.100 (VLAN30). Bloque deshabilitado.
-
-   # ─── Backend FastAPI ───────────────────────────────────────────────
-   backend:
-     build:
-       context: ../backend
-       dockerfile: Dockerfile
-     container_name: ninjasec-backend
-     restart: unless-stopped
--    depends_on:
--      postgres:
--        condition: service_healthy
-+    # depends_on postgres eliminado: la DB está en otra VM
-     environment:
+```bash
+sudo -u ninjadeploy git -C /opt/ninjasec checkout -- infra/docker-compose.prod.yml
 ```
 
-Y al final del archivo:
+### Reemplazar con la versión final (heredoc, sin paste contamination)
 
-```diff
- volumes:
--  postgres_data:
-   caddy_data:
-   caddy_config:
+```bash
+sudo -u ninjadeploy tee /opt/ninjasec/infra/docker-compose.prod.yml > /dev/null <<'EOF'
+# ════════════════════════════════════════════════════════════════════
+# NinjaSec — Stack de PRODUCCIÓN (Postgres remoto en VLAN30)
+# ════════════════════════════════════════════════════════════════════
+# Postgres corre en 192.168.30.100. Acá NO se levanta como container.
+# Caddy hace HTTPS automático con Let's Encrypt (requiere DOMAIN).
+# Solo 80/443 expuestos al host.
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  # ─── Reverse proxy con HTTPS automático ────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: ninjasec-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN:     ${DOMAIN:?DOMAIN requerido}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL requerido}
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - ninjasec-net
+
+  # ─── Backend FastAPI ───────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ninjasec-backend
+    restart: unless-stopped
+    environment:
+      APP_NAME:                    ${APP_NAME:-NinjaSec}
+      APP_VERSION:                 ${APP_VERSION:-0.2.0}
+      API_PREFIX:                  ${API_PREFIX:-/api/v1}
+      DATABASE_URL:                postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}
+      JWT_SECRET_KEY:              ${JWT_SECRET_KEY:?required}
+      JWT_ALGORITHM:               ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      CORS_ORIGINS:                ${CORS_ORIGINS}
+      SEED_ON_STARTUP:             "false"
+      IS_PRODUCTION:               "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8024/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ninjasec-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ─── Frontend Next.js ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+    container_name: ninjasec-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV:             production
+      BACKEND_INTERNAL_URL: http://backend:8024
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3018/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ninjasec-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  ninjasec-net:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+EOF
 ```
+
+> Notar el `'EOF'` con comillas simples — eso impide que bash expanda `${POSTGRES_USER}` y otras variables al escribir el archivo. **Sin las comillas, el archivo quedaría con valores vacíos.**
+
+### Diferencias respecto al original
+
+| Eliminado     | Por qué                                                |
+| ------------- | ------------------------------------------------------ |
+| `services.postgres` (servicio completo) | DB en otra VM (192.168.30.100) |
+| `backend.depends_on.postgres`           | Ya no existe ese servicio en este compose |
+| `volumes.postgres_data`                 | No hay servicio que lo monte |
 
 ### ✅ Checkpoint
+
 ```bash
-docker compose -f /opt/ninjasec/infra/docker-compose.prod.yml --env-file /opt/ninjasec/infra/.env config
+sudo -u ninjadeploy docker compose -f /opt/ninjasec/infra/docker-compose.prod.yml --env-file /opt/ninjasec/infra/.env config | head -20
 ```
-- No debe mostrar errores de variables faltantes.
-- En el output **no** debe aparecer el servicio `postgres`.
+
+Esperás:
+- Output del YAML compilado (sin errores).
+- 3 services: `caddy`, `backend`, `frontend`.
+- **NO** debe aparecer `postgres` como service.
+
+Si falla con `service "X" depends on undefined service "Y"`: el heredoc se cortó o el `EOF` quedó indentado. Volvé a correrlo asegurándote que el `EOF` final esté al inicio de línea (sin espacios).
 
 ---
 
