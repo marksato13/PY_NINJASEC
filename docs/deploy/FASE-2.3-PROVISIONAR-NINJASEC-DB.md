@@ -48,71 +48,35 @@ sudo systemctl status fail2ban --no-pager
 
 ---
 
-## 2.3.1b SSH hardening
+## 2.3.1b SSH hardening — ⏸️ POSTPUESTO
 
-> 🛑 **STOP. NO ejecutes el bloque de `sshd_config.d/99-ninjasec.conf` todavía.**
+> **Estado:** pendiente, se aplicará después de que el stack completo esté funcionando.
 >
-> El hardening cierra el login por password. Si tu clave SSH **NO** está cargada en
-> `~ninja/.ssh/authorized_keys` antes del restart de sshd, te quedás afuera de la VM
-> y tenés que recuperar acceso por la consola del hipervisor.
->
-> Ejecutá primero (a) y (b), validá (c) antes de (d).
+> **Por qué se posterga:** cerrar `PasswordAuthentication` requiere tener todas las claves SSH ya distribuidas (admin → db, GitHub Actions → web). Mientras estamos iterando es más rápido seguir con password-auth ON y endurecer al final, una vez que todo el deploy esté validado de punta a punta.
 
-### (a) En la VM admin (VLAN10) — clave SSH para gestión
+### Para deshacer el hardening si ya lo aplicaste
+
+Por consola del hipervisor (login local `ninja` + password):
 
 ```bash
-# En la VM admin (VLAN10), si todavía no la tenés:
-ls -la ~/.ssh/id_ed25519 2>/dev/null && echo "ya existe" || ssh-keygen -t ed25519 -C "ninja-admin@vlan10"
-cat ~/.ssh/id_ed25519.pub
+sudo rm /etc/ssh/sshd_config.d/99-ninjasec.conf
+sudo systemctl restart ssh
 ```
 
-Copiá la línea de la pubkey al clipboard.
+### Pendientes para retomar el hardening (al cierre del deploy)
 
-### (b) Cargar la pubkey en la VM db (vía password, mientras todavía se puede)
-
-Desde la **VM admin**:
-
-```bash
-ssh-copy-id ninja@192.168.30.100
-```
-
-Alternativa manual:
-
-```bash
-cat ~/.ssh/id_ed25519.pub | ssh ninja@192.168.30.100 \
-  'mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
-   cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
-```
-
-### (c) ✅ Validar que entrás con clave SIN password
-
-```bash
-ssh ninja@192.168.30.100 "whoami && hostname"
-# Debe responder sin pedir password. Si lo pide, NO sigas con (d).
-```
-
-### (d) Recién ahora aplicar el hardening (dentro de la VM db por SSH)
-
-```bash
-sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
-PasswordAuthentication no
-PermitRootLogin no
-AllowUsers ninja
-EOF
-
-sudo sshd -t && sudo systemctl restart ssh
-```
-
-### Si te quedaste afuera
-
-Consola web del hipervisor → login local con `ninja` + password → cargar pubkey manualmente:
-
-```bash
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-echo 'ssh-ed25519 AAAA... ninja-admin@vlan10' >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
+- [ ] Clave SSH del admin (`~/.ssh/id_ed25519` de la VM admin VLAN10) cargada en `~ninja/.ssh/authorized_keys` de la VM db
+- [ ] Validado `ssh ninja@192.168.30.100 "whoami"` desde la VM admin sin pedir password
+- [ ] Aplicar:
+  ```bash
+  sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
+  PasswordAuthentication no
+  PermitRootLogin no
+  AllowUsers ninja
+  EOF
+  sudo sshd -t && sudo systemctl restart ssh
+  ```
+- [ ] Re-validar `ssh ninja@192.168.30.100 "whoami"` post-hardening
 
 ---
 

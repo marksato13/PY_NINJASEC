@@ -62,77 +62,37 @@ sudo dpkg-reconfigure --priority=low unattended-upgrades
 
 ---
 
-## 2.4.1b SSH hardening
+## 2.4.1b SSH hardening — ⏸️ POSTPUESTO
 
-> 🛑 **STOP. NO ejecutes el bloque de `sshd_config.d/99-ninjasec.conf` todavía.**
+> **Estado:** pendiente, se aplicará después de que el stack completo esté funcionando y todas las claves SSH estén distribuidas.
 >
-> El hardening cierra el login por password. Si tu clave SSH **NO** está cargada en
-> `~ninja/.ssh/authorized_keys` antes del restart de sshd, te quedás afuera de la VM
-> y vas a tener que recuperar acceso por la consola del hipervisor.
->
-> Ejecutá primero los pasos (a) y (b) y validá (c) antes de pasar a (d).
+> **Por qué se posterga:** cerrar `PasswordAuthentication` requiere que todas las claves involucradas (admin → web, GitHub Actions `ninjasec_deploy` → ninjadeploy) ya estén cargadas y validadas. Más rápido iterar con password-auth ON, y endurecer al cierre del deploy de punta a punta.
 
-### (a) En la VM admin (VLAN10) — clave SSH para gestión
+### Para deshacer el hardening si ya lo aplicaste
 
-Si todavía no tenés clave SSH en la VM admin, generala:
+Por consola del hipervisor (login local `ninja` + password):
 
 ```bash
-# En la VM admin
-ls -la ~/.ssh/id_ed25519 2>/dev/null && echo "ya existe" || ssh-keygen -t ed25519 -C "ninja-admin@vlan10"
-cat ~/.ssh/id_ed25519.pub
+sudo rm /etc/ssh/sshd_config.d/99-ninjasec.conf
+sudo systemctl restart ssh
 ```
 
-Copiá la línea de la pubkey al clipboard.
+### Pendientes para retomar el hardening (al cierre del deploy)
 
-### (b) Cargar la pubkey en la VM web (vía password, mientras todavía se puede)
-
-Desde la **VM admin**:
-
-```bash
-ssh-copy-id ninja@192.168.20.100
-# Te pide el password de ninja UNA vez y carga la pubkey en authorized_keys
-```
-
-Alternativa manual si `ssh-copy-id` no está disponible:
-
-```bash
-cat ~/.ssh/id_ed25519.pub | ssh ninja@192.168.20.100 \
-  'mkdir -p ~/.ssh && chmod 700 ~/.ssh && \
-   cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
-```
-
-### (c) ✅ Validar que entrás con clave SIN password
-
-```bash
-ssh ninja@192.168.20.100 "whoami && hostname"
-# Debe responder "ninja" + hostname, SIN pedir password.
-# Si te pide password → NO sigas con (d). Revisá perms en ~/.ssh y authorized_keys.
-```
-
-### (d) Recién ahora aplicar el hardening (dentro de la VM web por SSH)
-
-```bash
-sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
-PasswordAuthentication no
-PermitRootLogin no
-AllowUsers ninja ninjadeploy
-EOF
-
-sudo sshd -t && sudo systemctl restart ssh
-```
-
-> El `AllowUsers` incluye `ninjadeploy` desde ya porque lo vamos a crear en 2.4.4 y GitHub Actions necesita poder loguear.
-
-### Si te quedaste afuera
-
-Consola web del hipervisor → login local con `ninja` + password → cargar pubkey manualmente:
-
-```bash
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-echo 'ssh-ed25519 AAAA... ninja-admin@vlan10' >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
+- [ ] Clave SSH del admin (`~/.ssh/id_ed25519` de la VM admin VLAN10) cargada en `~ninja/.ssh/authorized_keys` de la VM web
+- [ ] Pubkey de GitHub Actions (`ninjasec_deploy.pub` de la laptop) cargada en `~ninjadeploy/.ssh/authorized_keys` de la VM web (paso 2.4.5)
+- [ ] Validado `ssh ninja@192.168.20.100 "whoami"` desde la VM admin sin pedir password
+- [ ] Validado `ssh -i ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"` (via Actions runner o test manual)
+- [ ] Aplicar:
+  ```bash
+  sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
+  PasswordAuthentication no
+  PermitRootLogin no
+  AllowUsers ninja ninjadeploy
+  EOF
+  sudo sshd -t && sudo systemctl restart ssh
+  ```
+- [ ] Re-validar ambos accesos post-hardening
 
 ---
 
