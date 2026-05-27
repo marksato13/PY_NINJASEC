@@ -678,6 +678,19 @@ Si tira errores, te dice exactamente la línea.
 
 ## 2.4.10 Levantar el stack
 
+### Pre-check: espacio en disco
+
+El build pesa fácil 3–5 GB entre Python con deps, Node modules, layers, y build cache. Si la VM tiene < 10 GB libres, el build va a fallar a mitad con `no space left on device`. Validar primero:
+
+```bash
+df -h /
+docker system df
+```
+
+Esperás ver al menos **5 GB libres** en `/` (o en la partición donde vive `/var/lib/docker`). Si está justo, ver el sub-paso "Recuperación por disco lleno" abajo antes de seguir.
+
+### Build + up
+
 ```bash
 cd /opt/ninjasec/infra
 sudo -u ninjadeploy docker compose -f docker-compose.prod.yml --env-file .env up -d --build
@@ -688,6 +701,48 @@ sudo -u ninjadeploy docker compose -f docker-compose.prod.yml ps
 - 3 containers en `Up`: `ninjasec-caddy`, `ninjasec-backend`, `ninjasec-frontend`.
 - `docker logs ninjasec-backend --tail 50` muestra conexión OK a `192.168.30.100:5432`.
 - `docker logs ninjasec-caddy --tail 50` muestra emisión de cert Let's Encrypt (esto puede fallar hasta FASE 2.6 — DuckDNS).
+
+### 🩹 Recuperación si el build falló por `no space left on device`
+
+Síntoma típico:
+```
+write /tmp/.tmp-compose-build-metadataFile-...: no space left on device
+```
+
+Y `docker compose ps` queda vacío aunque el build llegó hasta `naming to docker.io/library/infra-backend:latest`. Las imágenes **sí** se crearon, pero el orquestador abortó antes de crear los containers.
+
+Pasos:
+
+```bash
+# 1. Diagnóstico
+df -h
+docker system df
+docker images | grep -E 'infra-(backend|frontend)'   # confirmar que las imágenes existen
+
+# 2. Limpieza segura — sólo build cache + dangling images
+sudo -u ninjadeploy docker builder prune -af
+sudo -u ninjadeploy docker image prune -f
+
+# 3. Re-chequear disco
+df -h /
+docker system df
+```
+
+> ⚠️ **NO corras `docker system prune -a --volumes`** todavía — borraría el volumen `caddy_data` (certificados Let's Encrypt) si ya existiera. Limitate a `builder prune` + `image prune`.
+
+Una vez liberado disco, **levantá sin rebuild** (las imágenes ya están):
+
+```bash
+sudo -u ninjadeploy docker compose -f docker-compose.prod.yml --env-file .env up -d
+sudo -u ninjadeploy docker compose -f docker-compose.prod.yml ps
+```
+
+Si después de `builder prune` el disco sigue lleno, hay que **agrandar el VMDK** desde vSphere (mínimo 30 GB recomendado para una VM con Docker + builds de Next.js) y después adentro de la VM:
+
+```bash
+sudo growpart /dev/sda 2          # ajustar partición según `lsblk`
+sudo resize2fs /dev/sda2          # o pvresize + lvextend si usás LVM
+```
 
 ---
 
@@ -721,6 +776,7 @@ Tropezones reales que aparecieron en la primera pasada y cómo evitarlos:
 | `encode: command not found`, `tls: command not found`, etc.       | Se pegó el contenido del Caddyfile **en bash** en vez de en el archivo | Ver 2.4.9 — el contenido va con `tee > archivo <<'EOF' … EOF`           |
 | `unrecognized global option: encode` al `caddy validate`          | Se corrió el validate sin pasar `DOMAIN` y `ACME_EMAIL` como env vars  | Ver 2.4.9 paso 3 — añadir `-e DOMAIN=... -e ACME_EMAIL=...` al `docker run` |
 | Caddyfile mínimo reemplazó al bueno del repo (sin headers OWASP, sin logging, etc.) | Se corrió el paso 2 de 2.4.9 cuando el archivo ya existía | `git -C /opt/ninjasec checkout -- infra/Caddyfile` para restaurar |
+| `write /tmp/.tmp-compose-build-metadataFile-...: no space left on device` y `docker compose ps` vacío tras un build largo | Disco lleno por build cache + node_modules + Python wheels acumulados | Ver 2.4.10 "Recuperación si el build falló por no space" — `docker builder prune -af` + `docker image prune -f`, después `up -d` sin `--build` |
 | `Load key … invalid format` al testear `ssh -i ninjasec_deploy`   | Paste corrupto al hacer `cat > file` en vez de `nano`                  | Ver 2.4.5 — usar `nano` y verificar con `head/tail/wc -l`               |
 | `cat: …/99-ninjasec.conf: No such file or directory` (al deshacer) | El hardening nunca se aplicó realmente                                 | No hace falta deshacer — ver 2.4.1b                                     |
 
