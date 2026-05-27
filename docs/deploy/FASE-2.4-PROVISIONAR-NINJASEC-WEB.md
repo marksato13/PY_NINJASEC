@@ -139,19 +139,54 @@ sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys
 
 > ⚠️ Estos comandos van en **tu laptop admin**, NO en el servidor.
 
+### En PowerShell (Windows)
+
+```powershell
+ssh-keygen -t ed25519 -C "github-actions-ninjasec" -f $HOME\.ssh\ninjasec_deploy
+```
+
+Cuando pida `Enter passphrase` → presioná **Enter** dos veces (sin passphrase, GitHub Actions no puede interactuar).
+
+> El flag `-N ""` que sí funciona en bash, en PowerShell falla con
+> `option requires an argument -- N` porque el parser come las comillas vacías.
+> Si insistís en flag explícito, usá: `ssh-keygen --% -t ed25519 -C "github-actions-ninjasec" -f C:\Users\<tu-user>\.ssh\ninjasec_deploy -N ""`
+> (el `--%` es el stop-parsing token de PowerShell).
+
+### En bash / WSL / Linux
+
 ```bash
-# En tu PC
 ssh-keygen -t ed25519 -C "github-actions-ninjasec" -f ~/.ssh/ninjasec_deploy -N ""
 ```
 
-Esto crea:
-- `~/.ssh/ninjasec_deploy`     — **privada** (va al Secret de GitHub `DEPLOY_SSH_KEY`)
-- `~/.ssh/ninjasec_deploy.pub` — **pública** (va al server)
+### Verificar que quedaron los 2 archivos
+
+PowerShell:
+```powershell
+ls $HOME\.ssh\ninjasec_deploy*
+```
+
+Bash:
+```bash
+ls -la ~/.ssh/ninjasec_deploy*
+```
+
+Esperás:
+- `ninjasec_deploy`     — **privada** (va al Secret de GitHub `DEPLOY_SSH_KEY`)
+- `ninjasec_deploy.pub` — **pública** (va al server)
 
 Copiar la pública al server (el método estándar `ssh-copy-id` no funciona porque `ninjadeploy` no tiene password):
 
+### En PowerShell
+
+```powershell
+Get-Content $HOME\.ssh\ninjasec_deploy.pub | ssh ninja@192.168.20.100 "sudo tee -a /home/ninjadeploy/.ssh/authorized_keys >/dev/null && sudo chown ninjadeploy:ninjadeploy /home/ninjadeploy/.ssh/authorized_keys && sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys"
+```
+
+> Te va a pedir el password de `ninja` (porque la línea usa `sudo`). El `&&` funciona porque se ejecuta dentro del shell remoto (bash), no en PowerShell.
+
+### En bash / WSL / Linux
+
 ```bash
-# En tu PC — pegar la pubkey vía tu usuario ninja
 cat ~/.ssh/ninjasec_deploy.pub | ssh ninja@192.168.20.100 \
   'sudo tee -a /home/ninjadeploy/.ssh/authorized_keys >/dev/null && \
    sudo chown ninjadeploy:ninjadeploy /home/ninjadeploy/.ssh/authorized_keys && \
@@ -159,11 +194,16 @@ cat ~/.ssh/ninjasec_deploy.pub | ssh ninja@192.168.20.100 \
 ```
 
 ### ✅ Checkpoint
-Probá el login automatizado **desde tu PC**:
+Probá el login automatizado **desde tu PC** (PowerShell o bash da igual, el comando es idéntico):
 
 ```bash
 ssh -i ~/.ssh/ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"
 # debe responder: ninjadeploy + lista vacía de containers
+```
+
+En PowerShell el `~` también funciona como `$HOME`. Si te da problemas, usá:
+```powershell
+ssh -i $HOME\.ssh\ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"
 ```
 
 Si pide password → el `authorized_keys` no quedó bien.
