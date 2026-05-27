@@ -606,45 +606,64 @@ Si falla con `service "X" depends on undefined service "Y"`: el heredoc se cort�
 
 ## 2.4.9 Caddyfile
 
-> ⚠️ **El contenido de abajo va DENTRO del archivo `Caddyfile`. NO se pega en bash.**
->
-> Si pegás `{$DOMAIN} { encode zstd gzip ... }` directamente en la terminal, bash
-> intenta ejecutar `encode`, `tls`, `reverse_proxy` como comandos y vas a ver
-> `command not found`. Es harmless pero no hace nada útil.
+> 🛑 **POR DEFAULT: NO TOQUES EL CADDYFILE.** El repo trae un Caddyfile de
+> producción con headers OWASP, logging estructurado, health check, proxies
+> con `X-Real-IP`, etc. Sobreescribirlo con un "ejemplo mínimo" te hace
+> perder todo eso.
 
-### Paso 1 — Ver qué Caddyfile trae el repo
+### Paso 1 — Confirmar que el Caddyfile del repo está OK
 
 ```bash
 cat /opt/ninjasec/infra/Caddyfile
 ```
 
-El repo ya viene con uno. Si su contenido es razonable (tiene `{$DOMAIN}`,
-`reverse_proxy backend:8024` y `reverse_proxy frontend:3018`), **saltá al paso 3**.
+Si el output tiene:
+- Bloque global `{ email {$ACME_EMAIL} ... }`
+- `{$DOMAIN} { ... }` con `reverse_proxy backend:8024` y `reverse_proxy frontend:3018`
+- Headers de seguridad (`Strict-Transport-Security`, `X-Content-Type-Options`, etc.)
 
-### Paso 2 — Sólo si está vacío o roto: sobreescribir con heredoc
+→ **NO TOQUES NADA. Pasá al paso 3.**
+
+### Paso 2 — SÓLO si `cat` no muestra nada (archivo vacío o falta)
 
 ```bash
 sudo -u ninjadeploy tee /opt/ninjasec/infra/Caddyfile > /dev/null <<'EOF'
+# NinjaSec — Caddy mínimo. Reemplazalo después por la versión del repo.
+{
+    email {$ACME_EMAIL}
+}
+
 {$DOMAIN} {
     encode zstd gzip
-    tls {$ACME_EMAIL}
 
-    @api path /api/*
-    reverse_proxy @api backend:8024
+    handle /api/* {
+        reverse_proxy backend:8024
+    }
 
-    reverse_proxy frontend:3018
+    handle {
+        reverse_proxy frontend:3018
+    }
 }
 EOF
 ```
 
-Notar las **comillas simples** alrededor de `'EOF'`. Eso evita que bash expanda
-`${DOMAIN}` y `${ACME_EMAIL}` al escribir el archivo — Caddy los resuelve solo
-desde las env vars del container.
+> Si **accidentalmente** sobreescribiste el Caddyfile bueno del repo, restauralo:
+> ```bash
+> sudo -u ninjadeploy git -C /opt/ninjasec checkout -- infra/Caddyfile
+> ```
 
-### Paso 3 — Validar la sintaxis con Caddy mismo
+### Paso 3 — Validar con `caddy validate` (pasándole las env vars)
+
+> ⚠️ El validate **necesita** que `DOMAIN` y `ACME_EMAIL` estén definidos. Si
+> los omitís, Caddy lee `{$DOMAIN}` como string vacío y dispara
+> `unrecognized global option: encode` (porque el bloque del site se confunde
+> con el bloque global).
 
 ```bash
-sudo -u ninjadeploy docker run --rm -v /opt/ninjasec/infra/Caddyfile:/etc/caddy/Caddyfile:ro \
+sudo -u ninjadeploy docker run --rm \
+  -v /opt/ninjasec/infra/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -e DOMAIN=ninjasec.duckdns.org \
+  -e ACME_EMAIL=makosdfrs@gmail.com \
   caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
@@ -653,7 +672,7 @@ Esperás:
 Valid configuration
 ```
 
-Si falla, te dice exactamente la línea con el error.
+Si tira errores, te dice exactamente la línea.
 
 ---
 
@@ -700,6 +719,8 @@ Tropezones reales que aparecieron en la primera pasada y cómo evitarlos:
 | `service "backend" depends on undefined service "postgres"`       | Se comentó `services.postgres` pero no `backend.depends_on.postgres`   | Usar el heredoc de 2.4.8 (reemplaza el archivo completo)                |
 | `DATABASE_URL: …:<password>@…` con `<>` literales                 | Se dejaron los corchetes del placeholder en el `.env`                  | Ver 2.4.7 — los `<>` no son parte del valor                             |
 | `encode: command not found`, `tls: command not found`, etc.       | Se pegó el contenido del Caddyfile **en bash** en vez de en el archivo | Ver 2.4.9 — el contenido va con `tee > archivo <<'EOF' … EOF`           |
+| `unrecognized global option: encode` al `caddy validate`          | Se corrió el validate sin pasar `DOMAIN` y `ACME_EMAIL` como env vars  | Ver 2.4.9 paso 3 — añadir `-e DOMAIN=... -e ACME_EMAIL=...` al `docker run` |
+| Caddyfile mínimo reemplazó al bueno del repo (sin headers OWASP, sin logging, etc.) | Se corrió el paso 2 de 2.4.9 cuando el archivo ya existía | `git -C /opt/ninjasec checkout -- infra/Caddyfile` para restaurar |
 | `Load key … invalid format` al testear `ssh -i ninjasec_deploy`   | Paste corrupto al hacer `cat > file` en vez de `nano`                  | Ver 2.4.5 — usar `nano` y verificar con `head/tail/wc -l`               |
 | `cat: …/99-ninjasec.conf: No such file or directory` (al deshacer) | El hardening nunca se aplicó realmente                                 | No hace falta deshacer — ver 2.4.1b                                     |
 
