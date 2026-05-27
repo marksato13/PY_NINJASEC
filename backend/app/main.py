@@ -52,6 +52,7 @@ register_exception_handlers(app)
 
 app.include_router(api_router, prefix=settings.api_prefix)
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
