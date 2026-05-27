@@ -699,8 +699,9 @@ sudo -u ninjadeploy docker compose -f docker-compose.prod.yml ps
 
 ### ✅ Checkpoint
 - 3 containers en `Up`: `ninjasec-caddy`, `ninjasec-backend`, `ninjasec-frontend`.
-- `docker logs ninjasec-backend --tail 50` muestra conexión OK a `192.168.30.100:5432`.
-- `docker logs ninjasec-caddy --tail 50` muestra emisión de cert Let's Encrypt (esto puede fallar hasta FASE 2.6 — DuckDNS).
+- Backend y frontend en `(healthy)`. Caddy en `Up` (sin healthcheck propio).
+- `docker logs ninjasec-backend --tail 50` muestra `Application startup complete.` y `GET /health HTTP/1.1" 200 OK`.
+- `docker logs ninjasec-caddy --tail 50` muestra emisión de cert Let's Encrypt — **va a fallar con `SERVFAIL`** hasta FASE 2.6 (DuckDNS no resuelve todavía). Es esperado.
 
 ### 🩹 Recuperación si el build falló por `no space left on device`
 
@@ -746,18 +747,69 @@ sudo resize2fs /dev/sda2          # o pvresize + lvextend si usás LVM
 
 ---
 
-## 2.4.11 Snapshot vSphere
+## 2.4.11 Validación end-to-end
 
-Tomar snapshot **después** de que los 3 containers estén `Up` y `healthy`:
+Antes de snapshot, confirmar que el stack se habla bien internamente. La HTTPS pública con cert válido va a quedar pendiente hasta FASE 2.6 — eso es esperado.
+
+### Por dentro de cada container
+
+```bash
+# Backend responde /health
+sudo -u ninjadeploy docker exec ninjasec-backend python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8024/health').read())"
+# → b'{"status":"ok","app":"NinjaSec"}'
+
+# Frontend renderiza /login
+sudo -u ninjadeploy docker exec ninjasec-frontend wget -qO- http://127.0.0.1:3018/login | head -3
+# → HTML con <title>NinjaSec</title>
+
+# Caddy alcanza al backend por la red Docker interna
+sudo -u ninjadeploy docker exec ninjasec-caddy wget -qO- http://backend:8024/health
+# → {"status":"ok","app":"NinjaSec"}
+```
+
+### Caddy desde el host
+
+```bash
+# Redirect 80 → 443 funciona
+curl -sS -o /dev/null -w "%{http_code} -> %{redirect_url}\n" http://127.0.0.1
+# → 308 -> https://127.0.0.1/
+
+# HTTPS con Host del dominio — va a fallar con TLS alert
+curl -k -H "Host: ninjasec.duckdns.org" -o /dev/null -w "%{http_code}\n" https://127.0.0.1/login
+# → tlsv1 alert internal error (ESPERADO: sin cert válido todavía)
+```
+
+> Por qué falla el HTTPS público: Let's Encrypt no pudo emitir el cert porque `ninjasec.duckdns.org` no resuelve (DuckDNS pendiente de FASE 2.6). Sin cert válido para ese hostname, Caddy aborta el TLS handshake. Esto se resuelve solo cuando FASE 2.6 termine.
+
+### Tests **NO** aplicables hasta FASE 2.6
+
+| Test | Por qué falla ahora | Cuándo va a andar |
+|---|---|---|
+| `curl https://ninjasec.duckdns.org/` desde Internet  | DNS no resuelve + cert no válido | Después de DuckDNS + port forward + LE OK |
+| Browser → `https://ninjasec.duckdns.org/login`       | Idem                             | Idem |
+| Webhook de GitHub Actions sobre HTTPS                | Idem                             | Idem |
+
+---
+
+## 2.4.12 Snapshot vSphere
+
+Tomar snapshot **después** de la validación end-to-end:
 
 ```
 vSphere → ninjasec-web → Take Snapshot
 Nombre:      docker-caddy-stack-up
-Descripción: Docker + Compose instalados, ninjadeploy con clave SSH de
-             GitHub Actions cargada y validada, /opt/ninjasec clonado,
-             .env producción (POSTGRES_HOST=192.168.30.100), stack levantado,
-             UFW + fail2ban activos.
-             NOTA: SSH hardening POSTPUESTO (ver 2.4.1b).
+Descripción: Stack producción levantado y validado end-to-end:
+             - backend (healthy) → DB en 192.168.30.100:5432 (cross-VLAN OK)
+             - frontend (healthy) → SSR /login correcto
+             - caddy → proxy interno backend:8024 y frontend:3018 OK
+             - 308 http→https desde host OK
+             Fix backend.static aplicado (commit d6caad7).
+             SSH hardening POSTPUESTO (2.4.1b).
+             DuckDNS + LE pendientes (FASE 2.6) → TLS público falla hasta entonces.
+
+Memory:  no necesario
+Quiesce: sí (si VMware Tools instaladas)
 ```
 
 ---
@@ -785,41 +837,63 @@ Tropezones reales que aparecieron en la primera pasada y cómo evitarlos:
 
 ## Checklist final FASE 2.4
 
-- [ ] `apt upgrade` + `unattended-upgrades` configurado
-- [ ] UFW activo: 22 (admin), 80, 443/tcp, 443/udp
-- [ ] `fail2ban` activo
+- [x] `apt upgrade` + `unattended-upgrades` configurado
+- [x] UFW activo: 22 (admin), 80, 443/tcp, 443/udp
+- [x] `fail2ban` activo
 - [ ] ⏸️ SSH hardening POSTPUESTO (futuro: password-auth OFF, root-login OFF, `AllowUsers m4rk ninjadeploy`)
-- [ ] `nc -vz 192.168.30.100 5432` → succeeded
-- [ ] `psql … SELECT version()` desde esta VM funciona
-- [ ] Docker + Compose instalados, `docker run hello-world` sin sudo
-- [ ] Usuario `ninjadeploy` creado, en grupo `docker`, con clave SSH de Actions
-- [ ] Login `ssh -i ninjasec_deploy ninjadeploy@…` exitoso desde la VM admin
-- [ ] `/opt/ninjasec` clonado del repo
-- [ ] `.env` con `POSTGRES_HOST=192.168.30.100`, JWT secret real, `IS_PRODUCTION=true`, perms 600
-- [ ] `docker-compose.prod.yml`: bloque `postgres:` y `depends_on: postgres` comentados, volumen `postgres_data` comentado
-- [ ] `docker compose config` sin errores
-- [ ] Stack `up -d --build` → 3 containers healthy
+- [x] `nc -vz 192.168.30.100 5432` → succeeded
+- [x] `psql … SELECT version()` desde esta VM funciona
+- [x] Docker + Compose instalados, `docker run hello-world` sin sudo
+- [x] Usuario `ninjadeploy` creado, en grupo `docker`, con clave SSH de Actions
+- [x] Login `ssh -i ninjasec_deploy ninjadeploy@…` exitoso desde la VM admin
+- [x] `/opt/ninjasec` clonado del repo
+- [x] `.env` con `POSTGRES_HOST=192.168.30.100`, JWT secret real, `IS_PRODUCTION=true`, perms 600 (sin `<>` ni `REEMPLAZAR_*`)
+- [x] `docker-compose.prod.yml` reemplazado con versión limpia (sin servicio postgres, sin depends_on postgres, sin volumen postgres_data)
+- [x] `docker compose config` sin errores
+- [x] Stack `up -d --build` → 3 containers healthy
+- [x] Validación end-to-end interna OK (backend `/health`, frontend `/login`, caddy→backend)
 - [ ] Snapshot `docker-caddy-stack-up` tomado
 
 ---
 
-## Secrets que quedan pendientes (para FASE 2.5 — CI/CD)
+## 🔜 Pendientes y próximas fases
 
-Anotar en password manager para configurar GitHub Secrets:
+### Pendientes técnicos dentro de la VM web
+
+- [ ] **Rotar password de PostgreSQL** + JWT secret (si alguno se filtró durante deploy/troubleshooting). Ver 2.3.4 (DB) + regenerar JWT_SECRET en el `.env` de la web y `docker compose up -d` para que el backend re-lea.
+- [ ] **Borrar la copia temporal de la privada** en la VM admin (`shred -u ~/ninjasec_deploy_test`) si quedó.
+- [ ] **Snapshot vSphere** `docker-caddy-stack-up`.
+
+### Próximas fases del deploy
+
+| Fase | Qué cubre                                          | Bloquea HTTPS público? | Bloquea CI/CD? |
+| ---- | -------------------------------------------------- | ---------------------- | -------------- |
+| **2.5** | GitHub Actions CI/CD: usar `DEPLOY_SSH_KEY` ya validado en 2.4.5 para deployar al server vía workflow. Crear `.github/workflows/deploy.yml` con SSH al `ninjadeploy@192.168.20.100` y `docker compose up -d --build`. | No                     | **Sí**         |
+| **2.6** | **DuckDNS + port forward + Let's Encrypt**: cliente DuckDNS (cron o paquete pfSense), NAT 80/443 WAN→`192.168.20.100`, validar que Caddy emite el cert. Acá empieza a andar `https://ninjasec.duckdns.org/`. | **Sí**                 | No             |
+| **2.7** | **Hardening final SSH** (lo POSTPUESTO en 2.4.1b y 2.3.1b): aplicar `PasswordAuthentication no`, `PermitRootLogin no`, `AllowUsers m4rk ninjadeploy` en ambas VMs. Sólo cuando 2.5 y 2.6 estén estables y todas las claves distribuidas. | No                     | No             |
+| **2.8** | **Self-hosted runner opcional** o **Tailscale/Cloudflare Tunnel** para que GitHub Actions no necesite SSH público al server. Si querés cerrar 22 al WAN. | No                     | No             |
+| **2.9** | **Backups off-site** (rsync/restic del `/opt/ninjasec` + dump de DB) hacia NAS o S3-compatible. | No                     | No             |
+
+### Recomendación de orden
+
+1. **2.6 primero** → te desbloquea HTTPS público real, podés ver la app en el browser, y al instante validás que toda la cadena WAN → pfSense → web → Caddy → backend ↔ DB anda.
+2. **2.5 después** → CI/CD encima del stack que ya sabés que funciona.
+3. **2.7 al cierre** → hardening cuando todo lo demás está estable y tenés cómo entrar por consola si algo se rompe.
+4. **2.8 / 2.9** → mejoras de postura, no bloqueantes.
+
+### Secrets pendientes (necesarios para FASE 2.5 — anotar en password manager)
 
 | Secret             | Valor                                                                |
 | ------------------ | -------------------------------------------------------------------- |
-| `DEPLOY_SSH_KEY`   | Contenido de `~/.ssh/ninjasec_deploy` (privada, **completa**)        |
-| `DEPLOY_HOST`      | `192.168.20.100` (o el FQDN público si lo expones tras Cloudflare)   |
+| `DEPLOY_SSH_KEY`   | Contenido completo de `~/.ssh/ninjasec_deploy` (laptop)              |
+| `DEPLOY_HOST`      | `192.168.20.100` (o FQDN público si exponés vía tunnel)              |
 | `DEPLOY_USER`      | `ninjadeploy`                                                        |
 | `DEPLOY_PATH`      | `/opt/ninjasec`                                                      |
 
----
+### Mejoras anotadas para iteraciones futuras
 
-## Notas para hardening posterior (NO FASE 2.4)
-
-- **Restringir SSH al puerto 22 desde admin LAN únicamente** vía pfSense (ya está) y eliminar `0.0.0.0` por completo cuando configuremos tunnel para GitHub Actions.
-- **Cloudflare Tunnel / Tailscale** en vez de exponer 22 al runner directo (anota para FASE 2.5).
-- **Caddy Auto-HTTPS por DNS challenge** una vez que DuckDNS resuelve (FASE 2.6) — evita exponer 80 a internet.
+- **Caddy Auto-HTTPS por DNS challenge** una vez que DuckDNS resuelve (evita exponer 80 a Internet, solo 443).
+- **Cloudflare Tunnel / Tailscale** en vez de exponer 22 al runner de GitHub directamente.
 - **Image scanning** en CI antes de deploy (`trivy image ninjasec-backend:latest`).
-- **Log shipping** del frontend/backend hacia la futura VM de observabilidad.
+- **Log shipping** del backend/frontend a una futura VM de observabilidad (Loki + Grafana).
+- **Migraciones Alembic formales** para columnas que se agregaron con `ALTER TABLE` directo en seed/dev.
