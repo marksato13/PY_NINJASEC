@@ -4,7 +4,7 @@
 > - [CHECKLIST-FIREWALL-PRE-FASE-2.3.md](./CHECKLIST-FIREWALL-PRE-FASE-2.3.md) aplicado (reglas pfSense activas).
 > - [FASE-2.3-PROVISIONAR-NINJASEC-DB.md](./FASE-2.3-PROVISIONAR-NINJASEC-DB.md) ejecutado (PostgreSQL en `192.168.30.100` respondiendo).
 >
-> **SSH desde Admin:** `ssh ninja@192.168.20.100`
+> **SSH desde Admin:** `ssh m4rk@192.168.20.100`
 > **Tiempo estimado:** ~30 min
 > **Fecha de revisión:** 2026-05-27
 
@@ -33,6 +33,17 @@ Regla general:
 - Los pasos **dentro** de la VM web → SSH desde la VM admin.
 - La generación del par SSH para GitHub Actions → puede hacerse en la laptop (es donde tenés tu password manager y tu browser para pegar el Secret en GitHub).
 - La copia de la **pubkey** al server → vía la VM admin (paso B en 2.4.5).
+
+## Convención de usuarios en la VM web
+
+Dos usuarios conviven en `ninjasec-web`:
+
+| Usuario       | Para qué                                       | Auth                                     |
+| ------------- | ---------------------------------------------- | ---------------------------------------- |
+| **`m4rk`**    | Admin interactivo (sudoer). SSH manual desde la VM admin. | Password (hasta el hardening final)      |
+| **`ninjadeploy`** | Deploy automatizado (GitHub Actions). En grupo `docker`. | Sólo SSH key (`--disabled-password`)     |
+
+> Si la VM fue creada con otro usuario default (ej. `ninja`, `ubuntu`), ajustá los comandos `ssh m4rk@…` y `sudo passwd …` por el que realmente exista. Verificalo con `id <user>` y `passwd -S <user>` antes de avanzar.
 
 ---
 
@@ -70,7 +81,7 @@ sudo dpkg-reconfigure --priority=low unattended-upgrades
 
 ### Para deshacer el hardening si ya lo aplicaste
 
-Por consola del hipervisor (login local `ninja` + password):
+Por consola del hipervisor (login local `m4rk` + password):
 
 ```bash
 sudo rm /etc/ssh/sshd_config.d/99-ninjasec.conf
@@ -79,16 +90,16 @@ sudo systemctl restart ssh
 
 ### Pendientes para retomar el hardening (al cierre del deploy)
 
-- [ ] Clave SSH del admin (`~/.ssh/id_ed25519` de la VM admin VLAN10) cargada en `~ninja/.ssh/authorized_keys` de la VM web
-- [ ] Pubkey de GitHub Actions (`ninjasec_deploy.pub` de la laptop) cargada en `~ninjadeploy/.ssh/authorized_keys` de la VM web (paso 2.4.5)
-- [ ] Validado `ssh ninja@192.168.20.100 "whoami"` desde la VM admin sin pedir password
-- [ ] Validado `ssh -i ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"` (via Actions runner o test manual)
+- [ ] Clave SSH del admin (`~/.ssh/id_ed25519` de la VM admin VLAN10) cargada en `~m4rk/.ssh/authorized_keys` de la VM web
+- [ ] Pubkey de GitHub Actions (`ninjasec_deploy.pub` de la laptop) cargada en `~ninjadeploy/.ssh/authorized_keys` de la VM web (paso 2.4.5) ✅ ya hecho
+- [ ] Validado `ssh m4rk@192.168.20.100 "whoami"` desde la VM admin sin pedir password
+- [ ] Validado `ssh -i ninjasec_deploy ninjadeploy@192.168.20.100 "whoami && docker ps"` desde la VM admin ✅ ya hecho (2.4.5)
 - [ ] Aplicar:
   ```bash
   sudo tee /etc/ssh/sshd_config.d/99-ninjasec.conf > /dev/null <<'EOF'
   PasswordAuthentication no
   PermitRootLogin no
-  AllowUsers ninja ninjadeploy
+  AllowUsers m4rk ninjadeploy
   EOF
   sudo sshd -t && sudo systemctl restart ssh
   ```
@@ -133,7 +144,7 @@ exit
 Volvé a entrar:
 
 ```bash
-ssh ninja@192.168.20.100
+ssh m4rk@192.168.20.100
 docker --version          # Docker version 27.x
 docker compose version    # Docker Compose version v2.x
 ```
@@ -213,11 +224,13 @@ Esperás:
 
 Como la laptop no rutea a la VLAN20 directamente, hacelo en 2 pasos:
 
-**Paso A — en la laptop (donde generaste la clave), mostrar el contenido de la pubkey:**
+**Paso A — en la laptop (donde generaste la clave), copiar la pubkey al clipboard:**
 
 ```powershell
-Get-Content $HOME\.ssh\ninjasec_deploy.pub
+Get-Content $HOME\.ssh\ninjasec_deploy.pub | Set-Clipboard
 ```
+
+> Usar `| Set-Clipboard` evita que selecciones de más en el terminal (líneas siguientes del `.md`, prompt, etc.) terminen pegándose junto con la clave.
 
 Bash/WSL equivalente:
 ```bash
@@ -229,12 +242,10 @@ Salida esperada (una sola línea):
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...XXXX github-actions-ninjasec
 ```
 
-Copiala **completa** al clipboard.
-
 **Paso B — desde la VM admin (VLAN10), SSH a la web y agregarla:**
 
 ```bash
-ssh ninja@192.168.20.100
+ssh m4rk@192.168.20.100
 ```
 
 Una vez dentro de la VM web, pegá la línea entre las comillas simples del `echo`:
@@ -250,23 +261,74 @@ sudo chmod 600 /home/ninjadeploy/.ssh/authorized_keys
 sudo cat /home/ninjadeploy/.ssh/authorized_keys
 ```
 
-### ✅ Checkpoint
-Probá el login automatizado **desde la VM admin** (no desde la laptop). Como la privada vive en la laptop, copiala temporalmente para el test:
+### ✅ Checkpoint — validar la clave funciona
 
-En la laptop:
+Probá el login automatizado **desde la VM admin** (no desde la laptop, no rutea). Como la privada vive en la laptop y `scp` directo laptop→VM-admin puede no estar habilitado, usamos copy-paste vía clipboard.
+
+**1. En la laptop (PowerShell): copiar la privada al clipboard**
+
 ```powershell
-scp $HOME\.ssh\ninjasec_deploy ninja@<ip-vm-admin>:~/ninjasec_deploy_test
+Get-Content $HOME\.ssh\ninjasec_deploy | Set-Clipboard
 ```
 
-En la VM admin:
+> Pegar con `cat > ~/file` y luego Ctrl+D **falla seguido** porque el terminal interpreta partes del paste (saltos de línea raros, fin de archivo no llega a tiempo, etc.) y la clave queda truncada. Por eso usamos `nano`, que trata el paste como texto puro.
+
+**2. En la VM admin: pegar con `nano`**
+
+```bash
+nano ~/ninjasec_deploy_test
+```
+
+Dentro de nano:
+- Click derecho → Paste (o Ctrl+Shift+V según terminal)
+- `Ctrl+O` → Enter (guardar)
+- `Ctrl+X` (salir)
+
+**3. Verificar que el contenido quedó íntegro**
+
+```bash
+head -1 ~/ninjasec_deploy_test
+tail -1 ~/ninjasec_deploy_test
+wc -l  ~/ninjasec_deploy_test
+```
+
+Esperás:
+- `head -1` → `-----BEGIN OPENSSH PRIVATE KEY-----`
+- `tail -1` → `-----END OPENSSH PRIVATE KEY-----`
+- `wc -l`  → 7 a 12 líneas (ed25519 son ~7)
+
+Si la línea de END está corrupta o falta → repetir desde `nano` con un paste limpio.
+
+**4. Test SSH**
+
 ```bash
 chmod 600 ~/ninjasec_deploy_test
-ssh -i ~/ninjasec_deploy_test ninjadeploy@192.168.20.100 "whoami && docker ps"
-# debe responder: ninjadeploy + lista vacía de containers
-shred -u ~/ninjasec_deploy_test     # borrar el test, no la necesitamos permanente acá
+ssh -i ~/ninjasec_deploy_test -o StrictHostKeyChecking=accept-new ninjadeploy@192.168.20.100 "whoami && docker ps"
 ```
 
-Si pide password → el `authorized_keys` quedó mal (revisar perms y owner).
+Esperás:
+```
+ninjadeploy
+CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES
+```
+
+(Lista vacía está OK — todavía no hay containers.)
+
+**5. Borrar la copia temporal**
+
+```bash
+shred -u ~/ninjasec_deploy_test
+ls ~/ninjasec_deploy_test 2>&1   # "No such file or directory"
+```
+
+Diagnóstico si falla:
+
+| Síntoma                            | Causa probable                                |
+| ---------------------------------- | --------------------------------------------- |
+| `Load key … invalid format`        | Paste corrupto en nano (rehacer)              |
+| `Permission denied (publickey)`    | Pubkey mal pegada en `authorized_keys` (revisar) |
+| Pide password                      | `authorized_keys` con perms o owner mal       |
+| `permission denied` en `docker ps` | `ninjadeploy` no está en grupo docker         |
 
 > **Por qué la privada no se queda en la VM admin:** la usa GitHub Actions (en `Settings → Secrets → DEPLOY_SSH_KEY`). La VM admin no necesita deployar manualmente.
 
@@ -275,9 +337,15 @@ Si pide password → el `authorized_keys` quedó mal (revisar perms y owner).
 ## 2.4.6 Clonar el repo
 
 ```bash
-# Desde tu sesión ninja en la VM
+# Desde tu sesión m4rk en la VM (o como root tras sudo -i)
 sudo -u ninjadeploy git clone https://github.com/marksato13/PY_NINJASEC.git /opt/ninjasec
 sudo -u ninjadeploy cp /opt/ninjasec/.env.example /opt/ninjasec/infra/.env
+ls -la /opt/ninjasec/infra/.env
+```
+
+Esperás:
+```
+-rw-r--r-- 1 ninjadeploy ninjadeploy ... /opt/ninjasec/infra/.env
 ```
 
 ---
@@ -451,9 +519,10 @@ Tomar snapshot **después** de que los 3 containers estén `Up` y `healthy`:
 vSphere → ninjasec-web → Take Snapshot
 Nombre:      docker-caddy-stack-up
 Descripción: Docker + Compose instalados, ninjadeploy con clave SSH de
-             GitHub Actions, /opt/ninjasec clonado, .env producción
-             (POSTGRES_HOST=192.168.30.100), stack levantado, UFW + fail2ban
-             activos, SSH password-auth OFF
+             GitHub Actions cargada y validada, /opt/ninjasec clonado,
+             .env producción (POSTGRES_HOST=192.168.30.100), stack levantado,
+             UFW + fail2ban activos.
+             NOTA: SSH hardening POSTPUESTO (ver 2.4.1b).
 ```
 
 ---
@@ -463,12 +532,12 @@ Descripción: Docker + Compose instalados, ninjadeploy con clave SSH de
 - [ ] `apt upgrade` + `unattended-upgrades` configurado
 - [ ] UFW activo: 22 (admin), 80, 443/tcp, 443/udp
 - [ ] `fail2ban` activo
-- [ ] SSH: password-auth OFF, root-login OFF, `AllowUsers ninja ninjadeploy`
+- [ ] ⏸️ SSH hardening POSTPUESTO (futuro: password-auth OFF, root-login OFF, `AllowUsers m4rk ninjadeploy`)
 - [ ] `nc -vz 192.168.30.100 5432` → succeeded
 - [ ] `psql … SELECT version()` desde esta VM funciona
 - [ ] Docker + Compose instalados, `docker run hello-world` sin sudo
 - [ ] Usuario `ninjadeploy` creado, en grupo `docker`, con clave SSH de Actions
-- [ ] Login `ssh -i ninjasec_deploy ninjadeploy@…` exitoso desde PC admin
+- [ ] Login `ssh -i ninjasec_deploy ninjadeploy@…` exitoso desde la VM admin
 - [ ] `/opt/ninjasec` clonado del repo
 - [ ] `.env` con `POSTGRES_HOST=192.168.30.100`, JWT secret real, `IS_PRODUCTION=true`, perms 600
 - [ ] `docker-compose.prod.yml`: bloque `postgres:` y `depends_on: postgres` comentados, volumen `postgres_data` comentado
