@@ -94,7 +94,36 @@ cd /opt/ninjasec/infra
 sudo -u ninjadeploy nano docker-compose.prod.yml
 ```
 
-Agregar al **final de `services:`**, justo antes de `networks:`:
+> ⚠️ **Indentación crítica.** El bloque va dentro de `services:`, **NO** dentro de
+> `volumes:`. Si lo pegás al final del archivo después de `volumes:`, Docker lo
+> interpreta como un volumen y falla con:
+> ```
+> volumes.dvwa additional properties 'container_name', 'image', ... not allowed
+> ```
+
+La estructura final del archivo debe verse así:
+
+```yaml
+services:
+  caddy:        # 2 espacios
+    ...
+  backend:
+    ...
+  frontend:
+    ...
+  dvwa:         # ← acá, mismo nivel que los anteriores
+    ...
+
+networks:
+  ninjasec-net:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+Agregar al **final del bloque `services:`**, justo antes de la línea `networks:`:
 
 ```yaml
   # ─── DVWA (vulnerable, lab Suricata) ──────────────────────────────
@@ -117,6 +146,31 @@ Agregar al **final de `services:`**, justo antes de `networks:`:
 > **Sin healthcheck a propósito:** la imagen no trae `curl` ni `wget`.
 > DVWA no es dependencia de ningún servicio de NinjaSec; si se cae no
 > afecta al stack productivo.
+
+### Pre-validar ubicación del bloque (paso clave)
+
+Antes de hacer `compose config`, verificá que `dvwa:` quedó dentro de
+`services:` y no en `volumes:`:
+
+```bash
+grep -n '^services:\|^networks:\|^volumes:\|^  dvwa:\|^  caddy:\|^  backend:\|^  frontend:' \
+  docker-compose.prod.yml
+```
+
+Output esperado (los números varían):
+
+```
+15:services:
+17:  caddy:
+64:  backend:
+99:  frontend:
+125:  dvwa:        ← antes de networks:, mismo nivel que los otros services
+142:networks:
+146:volumes:
+```
+
+Si `  dvwa:` aparece **después** de `volumes:`, está mal pegado — volvé al
+nano y movelo arriba de `networks:`.
 
 ### Validar config
 
@@ -411,6 +465,7 @@ Restaurar snapshot `pre-lab-suricata-dvwa` si querés volver al estado exacto.
 
 | Síntoma | Causa | Fix |
 |---|---|---|
+| `volumes.dvwa additional properties 'container_name', 'image', ... not allowed` | Bloque `dvwa:` pegado dentro de `volumes:` en vez de `services:` | Mover el bloque arriba de `networks:`, mismo nivel que `caddy:`/`backend:`/`frontend:` (2 espacios de indentación) |
 | Suricata WAN no bloquea al atacante externo | LAN ISP está en Pass List | Sacar la subred de Pass List, restart Suricata |
 | `docker compose up dvwa` falla con "port already allocated" | Algo más usa 8080 en el host | `ss -tlnp \| grep 8080` y cambiar puerto |
 | DVWA `/setup.php` muestra "Database error" | Reset DB no ejecutado | Click "Create / Reset Database" |
